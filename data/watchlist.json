@@ -1,0 +1,69 @@
+{
+  "stocks": [
+    {
+      "code": "000725",
+      "name": "京东方A",
+      "market": "sz"
+    },
+    {
+      "code": "300450",
+      "name": "先导智能",
+      "market": "sz"
+    },
+    {
+      "code": "000977",
+      "name": "浪潮信息",
+      "market": "sz"
+    },
+    {
+      "code": "002138",
+      "name": "顺络电子",
+      "market": "sz"
+    },
+    {
+      "code": "300433",
+      "name": "蓝思科技",
+      "market": "sz"
+    },
+    {
+      "code": "600522",
+      "name": "中天科技",
+      "market": "sh"
+    },
+    {
+      "code": "600887",
+      "name": "伊利股份",
+      "market": "sh"
+    },
+    {
+      "code": "002714",
+      "name": "牧原股份",
+      "market": "sz"
+    },
+    {
+      "code": "002648",
+      "name": "卫星化学",
+      "market": "sz"
+    },
+    {
+      "code": "600346",
+      "name": "恒力石化",
+      "market": "sh"
+    },
+    {
+      "code": "600276",
+      "name": "恒瑞医药",
+      "market": "sh"
+    },
+    {
+      "code": "002272",
+      "name": "川润股份",
+      "market": "sz"
+    },
+    {
+      "code": "002843",
+      "name": "泰嘉股份",
+      "market": "sz"
+    }
+  ]
+}

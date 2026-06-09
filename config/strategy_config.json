@@ -1,0 +1,774 @@
+{
+  "strategy_config": {
+    "_comment": "量化策略优化后参数配置表 — 2026-06-04 整理",
+    "backtest": {
+      "initial_capital": 100000,
+      "lookback_days": 120,
+      "start_date": "2024-07-01",
+      "benchmark": "sh.000300"
+    },
+    "position_sizing": {
+      "_comment": "体制自适应仓位管理",
+      "risk_per_trade": 0.05,
+      "atr_stop_mult": 2.5,
+      "position_ratio": 0.3,
+      "signal_strength_boost": 1.3,
+      "bearish_market_discount": 0.5,
+      "cash_buffer": 0.05,
+      "regime_config": {
+        "trending": {
+          "adx_threshold": ">25",
+          "target_ratio": 0.8,
+          "max_per_stock": 0.3,
+          "_note": "趋势市: 重仓出击"
+        },
+        "transition": {
+          "adx_threshold": "20~25",
+          "target_ratio": 0.55,
+          "max_per_stock": 0.25,
+          "_note": "过渡期: 适中仓位"
+        },
+        "ranging": {
+          "adx_threshold": "<20",
+          "target_ratio": 0.3,
+          "max_per_stock": 0.15,
+          "_note": "震荡市: 轻仓防守"
+        }
+      }
+    },
+    "stop_loss_take_profit": {
+      "_comment": "ATR动态止损止盈",
+      "hard_stop": "entry_price - 2.5×ATR",
+      "trailing_stop": {
+        "profit_lt_10pct": "2.5×ATR (给足空间, 让利润奔跑)",
+        "profit_10_to_20pct": "2.0×ATR (适度收紧)",
+        "profit_gt_20pct": "1.5×ATR (锁定大部分利润)"
+      },
+      "fallback_no_atr": {
+        "hard_stop_pct": -0.08,
+        "trailing_stop_pct": -0.05
+      }
+    },
+    "signal_engine": {
+      "score_threshold": 25,
+      "dedup_days": 5,
+      "cooldown_days": 4,
+      "ma60_filter_on_execute_day": true,
+      "category_weights": {
+        "trend": 0.35,
+        "strength": 0.2,
+        "momentum": 0.25,
+        "volume": 0.2
+      },
+      "regime_weights": {
+        "trending": {
+          "trend": 0.4,
+          "strength": 0.25,
+          "momentum": 0.15,
+          "volume": 0.2
+        },
+        "ranging": {
+          "trend": 0.15,
+          "strength": 0.1,
+          "momentum": 0.5,
+          "volume": 0.25
+        },
+        "transition": {
+          "trend": 0.28,
+          "strength": 0.18,
+          "momentum": 0.32,
+          "volume": 0.22
+        }
+      }
+    },
+    "indicators": {
+      "trend": {
+        "MA60": {
+          "period": 60,
+          "usage": "牛熊分界线, 价格上方=多头"
+        },
+        "EMA_DUAL": {
+          "fast": 12,
+          "slow": 26,
+          "usage": "金叉/死叉 + 差值变化率左侧预判"
+        },
+        "MACD": {
+          "fast": 12,
+          "slow": 26,
+          "signal": 9,
+          "usage": "零轴上方=多头, 柱状线方向"
+        }
+      },
+      "strength": {
+        "ADX": {
+          "period": 14,
+          "usage": ">25趋势市, <20震荡市, 体制判断核心"
+        },
+        "ATR": {
+          "period": 14,
+          "usage": "动态仓位 + 止损止盈距离"
+        }
+      },
+      "momentum": {
+        "RSI": {
+          "period": 21,
+          "smooth_ema": 5,
+          "neutral_zone": [
+            40,
+            60
+          ],
+          "usage": ">60强多头, <40强空头, 40-60观望"
+        },
+        "KDJ": {
+          "k_period": 9,
+          "k_smooth": 3,
+          "d_smooth": 3,
+          "usage": "金叉/死叉, 超买>80/超卖<20"
+        }
+      },
+      "volume": {
+        "OBV": {
+          "lookback": 10,
+          "usage": "量价共振/背离判断"
+        },
+        "VOLUME_RATIO": {
+          "ma_period": 5,
+          "usage": ">2放量, <0.5缩量"
+        }
+      }
+    },
+    "trading_costs": {
+      "commission_rate": 0.00025,
+      "stamp_tax": 0.001,
+      "slippage": 0.0001,
+      "min_commission": 5.0,
+      "_note": "佣金万2.5, 印花税千1(仅卖出), 滑点万一"
+    },
+    "watchlist": {
+      "_comment": "自选股列表 — 按分组组织，增删股票只需修改此处",
+      "_usage": "新增股票: 在对应分组数组里添加 {\"code\": \"xxx\", \"name\": \"名称\", \"market\": \"sh/sz\"}; 换组: 剪切到目标分组即可",
+      "科技成长型": [
+        {
+          "code": "000725",
+          "name": "京东方A",
+          "market": "sz"
+        },
+        {
+          "code": "300450",
+          "name": "先导智能",
+          "market": "sz"
+        },
+        {
+          "code": "002138",
+          "name": "顺络电子",
+          "market": "sz"
+        },
+        {
+          "code": "300433",
+          "name": "蓝思科技",
+          "market": "sz"
+        },
+        {
+          "code": "600522",
+          "name": "中天科技",
+          "market": "sh"
+        },
+        {
+          "code": "002272",
+          "name": "川润股份",
+          "market": "sz"
+        }
+      ],
+      "消费稳健型": [
+        {
+          "code": "600887",
+          "name": "伊利股份",
+          "market": "sh"
+        },
+        {
+          "code": "603288",
+          "name": "海天味业",
+          "market": "sh"
+        },
+        {
+          "code": "002507",
+          "name": "涪陵榨菜",
+          "market": "sz"
+        }
+      ],
+      "周期资源型": [
+        {
+          "code": "002714",
+          "name": "牧原股份",
+          "market": "sz"
+        },
+        {
+          "code": "002648",
+          "name": "卫星化学",
+          "market": "sz"
+        },
+        {
+          "code": "600346",
+          "name": "恒力石化",
+          "market": "sh"
+        }
+      ],
+      "医药创新型": [
+        {
+          "code": "600276",
+          "name": "恒瑞医药",
+          "market": "sh"
+        },
+        {
+          "code": "300347",
+          "name": "泰格医药",
+          "market": "sz"
+        }
+      ],
+      "机械制造型": [
+        {
+          "code": "000977",
+          "name": "浪潮信息",
+          "market": "sz"
+        },
+        {
+          "code": "600660",
+          "name": "福耀玻璃",
+          "market": "sh"
+        },
+        {
+          "code": "002843",
+          "name": "泰嘉股份",
+          "market": "sz"
+        }
+      ]
+    },
+    "group_config": {
+      "_comment": "分组策略参数 — 分组名与 watchlist 中的分组名一一对应",
+      "_usage": "调整策略参数时修改此处，增删股票请去 watchlist",
+      "_note": "watchlist 中没有匹配分组的股票，自动使用 _default 配置",
+      "_default": {
+        "atr_stop_mult": 2.5,
+        "max_per_stock_boost": 1.0,
+        "score_threshold": 25,
+        "regime_weights": {
+          "trending": {
+            "trend": 0.4,
+            "strength": 0.25,
+            "momentum": 0.15,
+            "volume": 0.2
+          },
+          "ranging": {
+            "trend": 0.15,
+            "strength": 0.1,
+            "momentum": 0.5,
+            "volume": 0.25
+          },
+          "transition": {
+            "trend": 0.28,
+            "strength": 0.18,
+            "momentum": 0.32,
+            "volume": 0.22
+          }
+        }
+      },
+      "groups": {
+        "科技成长型": {
+          "description": "高Beta、题材驱动、波动大",
+          "atr_stop_mult": 2.0,
+          "max_per_stock_boost": 1.25,
+          "score_threshold": 45,
+          "score_ceiling": 52,
+          "cooldown_days": 10,
+          "consecutive_loss_suspend": 15,
+          "max_consecutive_losses": 2,
+          "vol_ratio_threshold": 0.7,
+          "atr_price_ratio_max": 0.07,
+          "require_macd_dif_above_zero": false,
+          "price_ma20_max_deviation": 0.12,
+          "rsi_overbought": 80,
+          "breakout_ceiling_bonus": 5,
+          "ma_alignment_ceiling_bonus": 0,
+          "indicator_params": {
+            "MA60": {
+              "direction_buffer": 0.015
+            },
+            "RSI": {
+              "period": 9,
+              "oversold": 25,
+              "overbought": 80,
+              "neutral_zone": [
+                35,
+                65
+              ]
+            },
+            "KDJ": {
+              "k_period": 9,
+              "k_smooth": 3,
+              "d_smooth": 3,
+              "oversold_j": 15,
+              "overbought_j": 85
+            },
+            "MACD": {
+              "fast": 12,
+              "slow": 26,
+              "signal": 9,
+              "mode": "divergence_zero"
+            },
+            "EMA_DUAL": {
+              "fast": 5,
+              "slow": 15
+            },
+            "ADX": {
+              "period": 14,
+              "weak": 20,
+              "trending": 30,
+              "strong": 45
+            },
+            "OBV": {
+              "lookback": 20
+            },
+            "VOL_RATIO": {
+              "effective_threshold": 1.2,
+              "strong_threshold": 2.0
+            }
+          },
+          "indicator_weights": {
+            "MA60": 0.12,
+            "EMA_DUAL": 0.18,
+            "MACD": 0.08,
+            "RSI": 0.22,
+            "KDJ": 0.12,
+            "OBV": 0.2,
+            "VOL_RATIO": 0.08
+          },
+          "strength_modifiers": {
+            "OBV": 1.3,
+            "VOL_RATIO": 1.2,
+            "MACD": 0.7
+          },
+          "adx_multiplier": {
+            "strong": {
+              "adx_min": 45,
+              "multiplier": 0.8
+            },
+            "moderate": {
+              "adx_min": 30,
+              "multiplier": 0.6
+            },
+            "weak": {
+              "adx_min": 20,
+              "multiplier": 0.3
+            },
+            "none": {
+              "adx_min": 0,
+              "multiplier": 0.0
+            }
+          },
+          "regime_weights": {
+            "trending": {
+              "trend": 0.35,
+              "strength": 0.2,
+              "momentum": 0.22,
+              "volume": 0.23
+            },
+            "ranging": {
+              "trend": 0.12,
+              "strength": 0.1,
+              "momentum": 0.53,
+              "volume": 0.25
+            },
+            "transition": {
+              "trend": 0.22,
+              "strength": 0.18,
+              "momentum": 0.38,
+              "volume": 0.22
+            },
+            "trend_fading": {
+              "trend": 0.18,
+              "strength": 0.15,
+              "momentum": 0.4,
+              "volume": 0.27
+            }
+          },
+          "_note": "科技股(牛市优化): RSI9超卖25/超买80权重22%; KDJ J<15/J>85权重12%; EMA5/15快响应; MACD仅背离+零轴权重8%强度0.7; OBV20%+VOL8%量能28%强度1.3/1.2; MA60权重12%方向缓冲1.5%; VOL_RATIO阈值1.2; ADX全局乘数(>45→0.8,>30→0.6,>20→0.3,<20→0)"
+        },
+        "消费稳健型": {
+          "description": "消费蓝筹、慢牛低波动",
+          "atr_stop_mult": 1.8,
+          "max_per_stock_boost": 1.0,
+          "score_threshold": 30,
+          "score_ceiling": 45,
+          "cooldown_days": 5,
+          "max_consecutive_losses": 2,
+          "consecutive_loss_suspend": 10,
+          "vol_ratio_threshold": 0.6,
+          "atr_price_ratio_max": 0.05,
+          "price_ma20_max_deviation": 0.08,
+          "rsi_overbought": 75,
+          "breakout_ceiling_bonus": 3,
+          "ma_alignment_ceiling_bonus": 0,
+          "indicator_params": {
+            "MA60": {
+              "direction_buffer": 0.008
+            },
+            "RSI": {
+              "period": 21,
+              "oversold": 35,
+              "overbought": 65,
+              "neutral_zone": [
+                40,
+                60
+              ]
+            },
+            "KDJ": {
+              "k_period": 9,
+              "k_smooth": 3,
+              "d_smooth": 3,
+              "oversold_j": 30,
+              "overbought_j": 70
+            },
+            "MACD": {
+              "fast": 12,
+              "slow": 26,
+              "signal": 9,
+              "mode": "standard"
+            },
+            "EMA_DUAL": {
+              "fast": 12,
+              "slow": 26
+            },
+            "ADX": {
+              "period": 14,
+              "weak": 20,
+              "trending": 25,
+              "strong": 35
+            },
+            "OBV": {
+              "lookback": 20
+            },
+            "VOL_RATIO": {
+              "effective_threshold": 1.3,
+              "strong_threshold": 1.8
+            }
+          },
+          "indicator_weights": {
+            "MA60": 0.18,
+            "EMA_DUAL": 0.08,
+            "MACD": 0.12,
+            "RSI": 0.18,
+            "KDJ": 0.08,
+            "OBV": 0.15,
+            "VOL_RATIO": 0.12
+          },
+          "strength_modifiers": {
+            "MA60": 1.2,
+            "MACD": 1.1
+          },
+          "adx_multiplier": {
+            "strong": {
+              "adx_min": 25,
+              "multiplier": 0.8
+            },
+            "moderate": {
+              "adx_min": 20,
+              "multiplier": 0.5
+            },
+            "none": {
+              "adx_min": 0,
+              "multiplier": 0.2
+            }
+          },
+          "regime_weights": {
+            "trending": {
+              "trend": 0.45,
+              "strength": 0.22,
+              "momentum": 0.13,
+              "volume": 0.2
+            },
+            "ranging": {
+              "trend": 0.18,
+              "strength": 0.12,
+              "momentum": 0.45,
+              "volume": 0.25
+            },
+            "transition": {
+              "trend": 0.3,
+              "strength": 0.18,
+              "momentum": 0.28,
+              "volume": 0.24
+            },
+            "trend_fading": {
+              "trend": 0.2,
+              "strength": 0.15,
+              "momentum": 0.38,
+              "volume": 0.27
+            }
+          },
+          "_note": "消费股: RSI21超卖35/超买65权重18%; KDJ J<30/J>70权重8%; EMA12/26标准; MACD标准金叉死叉; MA60权重18%方向缓冲0.8%; OBV15%+VOL12%; ADX全局乘数(>25→0.8,>20→0.5,<20→0.2不禁止)"
+        },
+        "周期资源型": {
+          "description": "大宗商品驱动、周期性强",
+          "atr_stop_mult": 2.5,
+          "max_per_stock_boost": 1.0,
+          "score_threshold": 25,
+          "score_ceiling": 55,
+          "cooldown_days": 7,
+          "max_consecutive_losses": 3,
+          "consecutive_loss_suspend": 10,
+          "vol_ratio_threshold": 0.7,
+          "atr_price_ratio_max": 0.08,
+          "price_ma20_max_deviation": 0.1,
+          "rsi_overbought": 80,
+          "breakout_ceiling_bonus": 5,
+          "ma_alignment_ceiling_bonus": 0,
+          "indicator_params": {
+            "RSI": {
+              "period": 21,
+              "oversold": 30,
+              "overbought": 75,
+              "neutral_zone": [
+                40,
+                60
+              ]
+            },
+            "KDJ": {
+              "k_period": 9,
+              "k_smooth": 3,
+              "d_smooth": 3
+            },
+            "MACD": {
+              "fast": 12,
+              "slow": 26,
+              "signal": 9
+            },
+            "EMA_DUAL": {
+              "fast": 12,
+              "slow": 26
+            },
+            "ADX": {
+              "period": 14,
+              "weak": 20,
+              "trending": 25,
+              "strong": 40
+            }
+          },
+          "indicator_weights": {
+            "MA60": 0.1,
+            "EMA_DUAL": 0.12,
+            "MACD": 0.13,
+            "ADX": 0.18,
+            "RSI": 0.15,
+            "KDJ": 0.1,
+            "OBV": 0.1,
+            "VOL_RATIO": 0.12
+          },
+          "strength_modifiers": {
+            "ADX": 1.2,
+            "VOL_RATIO": 1.2,
+            "EMA_DUAL": 1.1
+          },
+          "regime_weights": {
+            "trending": {
+              "trend": 0.35,
+              "strength": 0.18,
+              "momentum": 0.22,
+              "volume": 0.25
+            },
+            "ranging": {
+              "trend": 0.13,
+              "strength": 0.08,
+              "momentum": 0.49,
+              "volume": 0.3
+            },
+            "transition": {
+              "trend": 0.25,
+              "strength": 0.18,
+              "momentum": 0.3,
+              "volume": 0.27
+            }
+          },
+          "_note": "周期股: RSI21标准+超卖30/超买75; ADX权重提升18%(趋势确认关键); 量价并重; 动态Ceiling+5"
+        },
+        "医药创新型": {
+          "description": "政策/研发事件驱动、均值回归强",
+          "atr_stop_mult": 2.5,
+          "max_per_stock_boost": 1.0,
+          "score_threshold": 40,
+          "score_ceiling": 55,
+          "cooldown_days": 10,
+          "max_consecutive_losses": 2,
+          "consecutive_loss_suspend": 15,
+          "vol_ratio_threshold": 0.7,
+          "atr_price_ratio_max": 0.06,
+          "price_ma20_max_deviation": 0.1,
+          "rsi_overbought": 78,
+          "breakout_ceiling_bonus": 3,
+          "ma_alignment_ceiling_bonus": 0,
+          "indicator_params": {
+            "RSI": {
+              "period": 21,
+              "oversold": 30,
+              "overbought": 70,
+              "neutral_zone": [
+                40,
+                60
+              ]
+            },
+            "KDJ": {
+              "k_period": 9,
+              "k_smooth": 3,
+              "d_smooth": 3
+            },
+            "MACD": {
+              "fast": 12,
+              "slow": 26,
+              "signal": 9
+            },
+            "EMA_DUAL": {
+              "fast": 12,
+              "slow": 26
+            },
+            "ADX": {
+              "period": 14,
+              "weak": 20,
+              "trending": 25,
+              "strong": 40
+            }
+          },
+          "indicator_weights": {
+            "MA60": 0.1,
+            "EMA_DUAL": 0.1,
+            "MACD": 0.12,
+            "ADX": 0.15,
+            "RSI": 0.2,
+            "KDJ": 0.13,
+            "OBV": 0.1,
+            "VOL_RATIO": 0.1
+          },
+          "strength_modifiers": {
+            "RSI": 1.3,
+            "KDJ": 1.2,
+            "MACD": 0.8
+          },
+          "regime_weights": {
+            "trending": {
+              "trend": 0.28,
+              "strength": 0.18,
+              "momentum": 0.32,
+              "volume": 0.22
+            },
+            "ranging": {
+              "trend": 0.1,
+              "strength": 0.08,
+              "momentum": 0.57,
+              "volume": 0.25
+            },
+            "transition": {
+              "trend": 0.2,
+              "strength": 0.15,
+              "momentum": 0.42,
+              "volume": 0.23
+            }
+          },
+          "_note": "医药股: RSI权重提升20%(均值回归核心); KDJ权重提升13%(拐点信号); MACD降权0.8(滞后); 动态Ceiling+3"
+        },
+        "机械制造型": {
+          "description": "制造业周期、趋势与量价并重",
+          "atr_stop_mult": 2.5,
+          "max_per_stock_boost": 1.0,
+          "score_threshold": 40,
+          "score_ceiling": 60,
+          "cooldown_days": 7,
+          "max_consecutive_losses": 2,
+          "consecutive_loss_suspend": 10,
+          "vol_ratio_threshold": 0.7,
+          "breakout_ceiling_bonus": 3,
+          "ma_alignment_ceiling_bonus": 0,
+          "indicator_params": {
+            "RSI": {
+              "period": 21,
+              "oversold": 30,
+              "overbought": 75,
+              "neutral_zone": [
+                40,
+                60
+              ]
+            },
+            "KDJ": {
+              "k_period": 9,
+              "k_smooth": 3,
+              "d_smooth": 3
+            },
+            "MACD": {
+              "fast": 12,
+              "slow": 26,
+              "signal": 9
+            },
+            "EMA_DUAL": {
+              "fast": 12,
+              "slow": 26
+            },
+            "ADX": {
+              "period": 14,
+              "weak": 20,
+              "trending": 25,
+              "strong": 40
+            }
+          },
+          "indicator_weights": {
+            "MA60": 0.1,
+            "EMA_DUAL": 0.12,
+            "MACD": 0.13,
+            "ADX": 0.17,
+            "RSI": 0.15,
+            "KDJ": 0.1,
+            "OBV": 0.11,
+            "VOL_RATIO": 0.12
+          },
+          "strength_modifiers": {
+            "ADX": 1.1,
+            "VOL_RATIO": 1.1
+          },
+          "regime_weights": {
+            "trending": {
+              "trend": 0.3,
+              "strength": 0.2,
+              "momentum": 0.25,
+              "volume": 0.25
+            },
+            "ranging": {
+              "trend": 0.12,
+              "strength": 0.1,
+              "momentum": 0.53,
+              "volume": 0.25
+            },
+            "transition": {
+              "trend": 0.22,
+              "strength": 0.18,
+              "momentum": 0.35,
+              "volume": 0.25
+            },
+            "trend_fading": {
+              "trend": 0.18,
+              "strength": 0.15,
+              "momentum": 0.4,
+              "volume": 0.27
+            }
+          },
+          "_note": "制造股: 标准参数; 均衡权重; ADX和量能略提升; 不限制ATR/MA20偏离; 动态Ceiling+3"
+        }
+      }
+    },
+    "performance_2026": {
+      "total_return": "+24.45%",
+      "ytd_2026": "+20.83%",
+      "alpha_2026": "+16.87%",
+      "sharpe_ratio": 1.7,
+      "max_drawdown": "-5.03%",
+      "win_rate": "51.9%",
+      "profit_factor": 2.61,
+      "trade_count": 27
+    }
+  }
+}
