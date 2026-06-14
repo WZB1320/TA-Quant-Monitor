@@ -53,12 +53,67 @@ class GroupConfig:
             for s in stocks:
                 self._code_to_group[s["code"]] = group_name
 
+        # 手动模式预设 (仅科技成长型)
+        self._manual_presets: Dict[str, dict] = {}
+        for group_name, cfg in self._groups.items():
+            presets = cfg.get("manual_regime_presets")
+            if presets:
+                self._manual_presets[group_name] = presets
+
+        # 用户手动选择的体制 (group_name → "trending"|"ranging"|"auto")
+        self._user_regime: Dict[str, str] = {}
+
         self._loaded = True
 
     def get_group(self, code: str) -> str:
         """获取股票所属分组名"""
         self._load()
         return self._code_to_group.get(code, "_default")
+
+    # ── 手动模式（用户判断方向） ──
+
+    def set_user_regime(self, group_name: str, regime: str):
+        """设置用户手动选择的体制模式
+
+        Args:
+            group_name: 分组名称
+            regime: "trending" (趋势上涨) / "ranging" (震荡) / "auto" (自动判断)
+        """
+        self._load()
+        if regime in ("trending", "ranging"):
+            self._user_regime[group_name] = regime
+        else:
+            self._user_regime.pop(group_name, None)
+
+    def get_user_regime(self, group_name: str) -> str:
+        """获取用户手动选择的体制模式"""
+        self._load()
+        return self._user_regime.get(group_name, "auto")
+
+    def clear_user_regime(self):
+        """清除所有用户手动选择（恢复自动判断）"""
+        self._load()
+        self._user_regime.clear()
+
+    def _merge_preset(self, code: str, group_config: dict) -> dict:
+        """将手动模式预设合并到分组配置中"""
+        self._load()
+        group_name = self._code_to_group.get(code)
+        if not group_name:
+            return group_config
+        regime = self._user_regime.get(group_name)
+        if not regime or regime == "auto":
+            return group_config
+        presets = self._manual_presets.get(group_name, {})
+        preset = presets.get(regime)
+        if not preset:
+            return group_config
+        # 合并: preset 覆盖 group_config 中对应的键
+        merged = dict(group_config)
+        merged.update(preset)
+        return merged
+
+    # ── 分组配置读取 ──
 
     def _get_group_config(self, code: str) -> dict:
         """获取股票所属分组的完整配置"""
@@ -76,6 +131,7 @@ class GroupConfig:
     def get_atr_stop_mult(self, code: str) -> float:
         """获取分组专属ATR止损倍率"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         return gc.get("atr_stop_mult", self._default.get("atr_stop_mult", 2.5))
 
     def get_max_per_stock_boost(self, code: str) -> float:
@@ -86,26 +142,31 @@ class GroupConfig:
     def get_score_threshold(self, code: str) -> float:
         """获取分组专属最低得分阈值"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         return gc.get("score_threshold", self._default.get("score_threshold", 25))
 
     def get_score_ceiling(self, code: str) -> float:
         """获取分组专属得分上限 (超过此值视为过热信号, 0=不限制)"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         return gc.get("score_ceiling", self._default.get("score_ceiling", 0))
 
     def get_cooldown_days(self, code: str) -> int:
         """获取分组专属冷却期天数"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         return gc.get("cooldown_days", self._default.get("cooldown_days", 4))
 
     def get_consecutive_loss_suspend(self, code: str) -> int:
         """获取连亏暂停天数"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         return gc.get("consecutive_loss_suspend", self._default.get("consecutive_loss_suspend", 0))
 
     def get_max_consecutive_losses(self, code: str) -> int:
         """获取连亏触发暂停的阈值"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         return gc.get("max_consecutive_losses", self._default.get("max_consecutive_losses", 0))
 
     def get_vol_ratio_threshold(self, code: str) -> float:
@@ -116,6 +177,7 @@ class GroupConfig:
     def get_atr_price_ratio_max(self, code: str) -> float:
         """获取ATR/Price最大波动率 (0=不限制)"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         return gc.get("atr_price_ratio_max", self._default.get("atr_price_ratio_max", 0))
 
     def get_require_macd_dif_above_zero(self, code: str) -> bool:
@@ -136,7 +198,13 @@ class GroupConfig:
     def get_all_group_params(self, code: str) -> dict:
         """获取指定股票的所有分组参数 (一次性返回, 避免多次调用)"""
         gc = self._get_group_config(code)
+        gc = self._merge_preset(code, gc)
         default = self._default
+        # 手动模式: 获取 forced_regime
+        group_name = self._code_to_group.get(code)
+        forced_regime = self._user_regime.get(group_name, "auto") if group_name else "auto"
+        if forced_regime == "auto":
+            forced_regime = None
         return {
             "score_threshold": gc.get("score_threshold", default.get("score_threshold", 25)),
             "score_ceiling": gc.get("score_ceiling", default.get("score_ceiling", 0)),
@@ -157,6 +225,7 @@ class GroupConfig:
             "indicator_params": gc.get("indicator_params", {}),
             "indicator_weights": gc.get("indicator_weights", None),
             "strength_modifiers": gc.get("strength_modifiers", {}),
+            "forced_regime": forced_regime,  # 手动模式: 强制体制, 覆盖ADX自动检测
         }
 
     def get_regime_filter_overrides(self, code: str) -> dict:

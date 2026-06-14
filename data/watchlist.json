@@ -64,6 +64,36 @@
       "code": "002843",
       "name": "泰嘉股份",
       "market": "sz"
+    },
+    {
+      "code": "603002",
+      "name": "宏昌电子",
+      "market": "sh"
+    },
+    {
+      "code": "301188",
+      "name": "力诺药包",
+      "market": "sz"
+    },
+    {
+      "code": "600552",
+      "name": "凯盛科技",
+      "market": "sh"
+    },
+    {
+      "code": "600426",
+      "name": "华鲁恒升",
+      "market": "sh"
+    },
+    {
+      "code": "300119",
+      "name": "瑞普生物",
+      "market": "sz"
+    },
+    {
+      "code": "601012",
+      "name": "隆基绿能",
+      "market": "sh"
     }
   ]
 }

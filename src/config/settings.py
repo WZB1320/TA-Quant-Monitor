@@ -11,6 +11,9 @@ WATCHLIST_FILE = os.path.join(DATA_DIR, "watchlist.json")
 # SQLite 缓存数据库
 CACHE_DB = os.path.join(DATA_DIR, "kline_cache.db")
 
+# SQLite 股票知识库
+STOCK_KB_DB = os.path.join(DATA_DIR, "stock_knowledge.db")
+
 # 默认获取日线数据的回溯天数
 DEFAULT_LOOKBACK_DAYS = 365
 

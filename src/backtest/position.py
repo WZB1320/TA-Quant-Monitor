@@ -353,6 +353,12 @@ class PositionManager:
         if current_price > trade.highest_price:
             trade.highest_price = current_price
 
+        # ── 安全网: 10%硬止损 (所有模式永远生效) ──
+        if current_price <= trade.entry_price * 0.90:
+            pnl_pct = (current_price - trade.entry_price) / trade.entry_price
+            return self.close_position(symbol, current_date, current_price,
+                                       f"安全网硬止损 ({pnl_pct*100:.1f}%, 保本底线)")
+
         # 获取 ATR 止损距离
         atr_val = getattr(trade, '_atr_value', None)
         # 使用交易级别的 atr_stop_mult (分组专属), 否则用全局默认值
@@ -386,7 +392,7 @@ class PositionManager:
         else:
             # 无 ATR 时回退到固定百分比
             pnl_pct = (current_price - trade.entry_price) / trade.entry_price
-            if pnl_pct <= -0.08:
+            if pnl_pct <= -0.10:
                 return self.close_position(symbol, current_date, current_price,
                                            f"硬止损 ({pnl_pct*100:.1f}%)")
             if trade.highest_price > trade.entry_price:

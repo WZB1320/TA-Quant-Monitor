@@ -448,3 +448,8 @@ class SignalFilter:
                 json.dump(self._history, f, indent=2)
         except Exception:
             pass
+
+    def clear_history(self):
+        """清除信号去重历史 (每次新分析前调用, 避免旧记录拦截新信号)"""
+        self._history = {}
+        self._save_history()

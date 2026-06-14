@@ -105,18 +105,19 @@ class Scorer:
         return strength * modifier
 
     def score(self, indicator_results: Dict[str, IndicatorResult],
-              regime_weights: dict = None) -> float:
+              regime_weights: dict = None, forced_regime: str = None) -> float:
         """
         计算综合加权得分 (体制自适应 + 分组差异化)
 
         Args:
             indicator_results: {指标名: IndicatorResult}
             regime_weights: 分组专属体制权重 (可选), 不传则用默认
+            forced_regime: 手动强制体制 (trending/ranging), 覆盖ADX自动检测
 
         Returns:
             综合得分 (-100 ~ +100)
         """
-        regime = self._get_regime(indicator_results)
+        regime = forced_regime if forced_regime else self._get_regime(indicator_results)
         if regime_weights:
             rw = regime_weights.get(regime, REGIME_WEIGHTS.get(regime, REGIME_WEIGHTS["transition"]))
         else:

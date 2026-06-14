@@ -177,6 +177,21 @@
           "code": "002272",
           "name": "川润股份",
           "market": "sz"
+        },
+        {
+          "code": "603002",
+          "name": "宏昌电子",
+          "market": "sh"
+        },
+        {
+          "code": "301188",
+          "name": "力诺药包",
+          "market": "sz"
+        },
+        {
+          "code": "600552",
+          "name": "凯盛科技",
+          "market": "sh"
         }
       ],
       "消费稳健型": [
@@ -211,6 +226,11 @@
           "code": "600346",
           "name": "恒力石化",
           "market": "sh"
+        },
+        {
+          "code": "600426",
+          "name": "华鲁恒升",
+          "market": "sh"
         }
       ],
       "医药创新型": [
@@ -222,6 +242,11 @@
         {
           "code": "300347",
           "name": "泰格医药",
+          "market": "sz"
+        },
+        {
+          "code": "300119",
+          "name": "瑞普生物",
           "market": "sz"
         }
       ],
@@ -240,6 +265,11 @@
           "code": "002843",
           "name": "泰嘉股份",
           "market": "sz"
+        },
+        {
+          "code": "601012",
+          "name": "隆基绿能",
+          "market": "sh"
         }
       ]
     },
@@ -391,7 +421,28 @@
               "volume": 0.27
             }
           },
-          "_note": "科技股(牛市优化): RSI9超卖25/超买80权重22%; KDJ J<15/J>85权重12%; EMA5/15快响应; MACD仅背离+零轴权重8%强度0.7; OBV20%+VOL8%量能28%强度1.3/1.2; MA60权重12%方向缓冲1.5%; VOL_RATIO阈值1.2; ADX全局乘数(>45→0.8,>30→0.6,>20→0.3,<20→0)"
+          "_note": "科技股(牛市优化): RSI9超卖25/超买80权重22%; KDJ J<15/J>85权重12%; EMA5/15快响应; MACD仅背离+零轴权重8%强度0.7; OBV20%+VOL8%量能28%强度1.3/1.2; MA60权重12%方向缓冲1.5%; VOL_RATIO阈值1.2; ADX全局乘数(>45→0.8,>30→0.6,>20→0.3,<20→0)",
+          "manual_regime_presets": {
+            "_comment": "手动模式预设 — 用户在信号看板选择「趋势上涨/震荡」后，覆盖对应过滤参数",
+            "trending": {
+              "score_threshold": 35,
+              "score_ceiling": 60,
+              "cooldown_days": 5,
+              "atr_stop_mult": 2.5,
+              "max_consecutive_losses": 3,
+              "consecutive_loss_suspend": 8,
+              "atr_price_ratio_max": 0.1
+            },
+            "ranging": {
+              "score_threshold": 48,
+              "score_ceiling": 55,
+              "cooldown_days": 12,
+              "atr_stop_mult": 1.5,
+              "max_consecutive_losses": 2,
+              "consecutive_loss_suspend": 15,
+              "atr_price_ratio_max": 0.06
+            }
+          }
         },
         "消费稳健型": {
           "description": "消费蓝筹、慢牛低波动",
@@ -505,7 +556,18 @@
               "volume": 0.27
             }
           },
-          "_note": "消费股: RSI21超卖35/超买65权重18%; KDJ J<30/J>70权重8%; EMA12/26标准; MACD标准金叉死叉; MA60权重18%方向缓冲0.8%; OBV15%+VOL12%; ADX全局乘数(>25→0.8,>20→0.5,<20→0.2不禁止)"
+          "_note": "消费股: RSI21超卖35/超买65权重18%; KDJ J<30/J>70权重8%; EMA12/26标准; MACD标准金叉死叉; MA60权重18%方向缓冲0.8%; OBV15%+VOL12%; ADX全局乘数(>25→0.8,>20→0.5,<20→0.2不禁止)",
+          "manual_regime_presets": {
+            "trending": {
+              "score_threshold": 33,
+              "score_ceiling": 55,
+              "cooldown_days": 6,
+              "atr_stop_mult": 3.0,
+              "max_consecutive_losses": 4,
+              "consecutive_loss_suspend": 10,
+              "atr_price_ratio_max": 0.15
+            }
+          }
         },
         "周期资源型": {
           "description": "大宗商品驱动、周期性强",

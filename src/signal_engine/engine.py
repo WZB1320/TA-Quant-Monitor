@@ -48,6 +48,7 @@ class SignalEngine:
         indicator_weights = None
         strength_modifiers = None
         regime_weights = None
+        forced_regime = None
 
         if self.group_config:
             group_params = self.group_config.get_all_group_params(symbol)
@@ -55,6 +56,7 @@ class SignalEngine:
             indicator_weights = group_params.get("indicator_weights")
             strength_modifiers = group_params.get("strength_modifiers")
             regime_weights = group_params.get("regime_weights")
+            forced_regime = group_params.get("forced_regime")
 
         # Step 1: 指标计算 (传入分组专属指标参数)
         indicator_results = self.pipeline.run(df, indicator_params=indicator_params)
@@ -65,7 +67,7 @@ class SignalEngine:
         # Step 3: 加权评分 (使用分组专属权重+强度修正)
         scorer = Scorer(indicator_weights=indicator_weights,
                         strength_modifiers=strength_modifiers)
-        score = scorer.score(indicator_results, regime_weights=regime_weights)
+        score = scorer.score(indicator_results, regime_weights=regime_weights, forced_regime=forced_regime)
         cat_scores = scorer.score_by_category(indicator_results)
 
         # Step 3.1: 将得分注入 indicator_results (供 filter 使用)
@@ -163,12 +165,23 @@ class SignalEngine:
     def _calc_confidence(self, level: SignalLevel,
                          indicator_results: Dict[str, IndicatorResult]) -> float:
         """计算信号置信度"""
-        if level == SignalLevel.NEUTRAL:
-            return 0.0
-
         # 计算指标一致性
         directions = [r.direction for r in indicator_results.values()
                       if isinstance(r, IndicatorResult)]
+
+        if not directions:
+            return 0.0
+
+        # NEUTRAL: 看多/看空哪方占优就用哪方算一致性
+        if level == SignalLevel.NEUTRAL:
+            bullish = sum(1 for d in directions if d > 0)
+            bearish = sum(1 for d in directions if d < 0)
+            dominant = max(bullish, bearish)
+            total = bullish + bearish
+            consensus = dominant / total if total > 0 else 0.0
+            # NEUTRAL 置信度上限 0.5（指标矛盾或被降级，不应高置信）
+            return round(min(consensus * 0.5, 0.5), 2)
+
         target_dir = 1 if level.is_bullish else -1
 
         aligned = sum(1 for d in directions if d == target_dir)

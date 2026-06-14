@@ -14,6 +14,7 @@ import numpy as np
 
 from src.signal_engine import SignalEngine, SignalResult
 from src.signal_engine.signals import SignalLevel
+from src.signal_engine.filter import SignalFilter
 from src.config.group_config import GroupConfig
 from .position import PositionManager, Trade, Side
 from .broker import Broker
@@ -86,6 +87,13 @@ class BacktestEngine:
             commission_rate=self.commission_rate,
             risk_per_trade=self.risk_per_trade,
             atr_stop_mult=self.atr_stop_mult,
+        )
+
+        # 重置信号引擎的过滤器状态，避免多次 run() 之间状态残留
+        self.signal_engine.filter = SignalFilter(
+            dedup_days=self.signal_engine.filter.dedup_days,
+            market_ma60_filter=self.signal_engine.filter.market_ma60_filter,
+            cooldown_days=self.signal_engine.filter.cooldown_days,
         )
 
         # 构建交易日历 + 大盘MA60过滤
