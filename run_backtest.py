@@ -5,17 +5,16 @@ from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from src.config.runtime_mode import set_mode, RuntimeMode
+# 设置回测模式: SignalFilter 不写盘, 用户偏好不持久化, 保证回测可复现
+set_mode(RuntimeMode.BACKTEST)
+
 from src.data_fetcher import DataManager, Watchlist
 from src.backtest import BacktestEngine
 from src.config.group_config import GroupConfig
 
 
 def main():
-    # 清除信号历史，避免跨次回测信号去重干扰
-    hist_file = os.path.join('data', 'signal_history.json')
-    if os.path.exists(hist_file):
-        os.remove(hist_file)
-
     # 加载股票数据
     dm = DataManager()
     wl = Watchlist()

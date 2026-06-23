@@ -11,6 +11,11 @@
 
 注意: is_duplicate / record 使用实际分析日期而非 datetime.now(),
      避免回测时所有信号被误判为同日重复。
+
+运行时模式:
+  - LIVE 模式: 信号历史读写 signal_history.json, 跨会话保留
+  - BACKTEST 模式: 信号历史仅存内存, 不写盘, 避免污染实时数据
+  由 src.config.runtime_mode 控制, 默认 LIVE (向后兼容)
 """
 from datetime import datetime, date, timedelta
 from typing import Dict, Optional
@@ -19,6 +24,7 @@ import os
 
 from src.indicators.base import IndicatorResult
 from src.signal_engine.signals import SignalLevel, SignalResult
+from src.config.runtime_mode import get_mode, RuntimeMode
 
 # 去重记录文件 (仅用于实时交易, 回测禁用)
 _DEDUP_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
@@ -41,9 +47,18 @@ class SignalFilter:
         self._market_ma60_direction: int = 0  # 大盘MA60方向: 1多头, -1空头, 0未知
         self.cooldown_days = cooldown_days
         self._last_exit: Dict[str, date] = {}  # {symbol: 最后一次卖出日期}
-        self._history = self._load_history()
+        self._history: Dict[str, str] = {}
+        self._history_loaded: bool = False  # 懒加载标记
         self._consecutive_losses: Dict[str, int] = {}  # {symbol: 连续亏损次数}
         self._symbol_suspended_until: Dict[str, date] = {}  # {symbol: 暂停至日期}
+
+    def _ensure_history_loaded(self) -> None:
+        """懒加载信号历史 — 仅 LIVE 模式从磁盘读取, BACKTEST 模式用空内存"""
+        if self._history_loaded:
+            return
+        self._history_loaded = True
+        if get_mode() == RuntimeMode.LIVE:
+            self._history = self._load_history()
 
     def set_market_ma60(self, direction: int):
         """设置大盘MA60方向 (由外部在每次分析前调用)"""
@@ -264,8 +279,12 @@ class SignalFilter:
                               Dict[str, IndicatorResult],
                               score_threshold: float = 25,
                               group_params: dict = None,
-                              df: "pd.DataFrame" = None) -> SignalLevel:
-        """硬过滤后，限制信号方向 + 最低得分阈值 + 成交量过滤 + MACD顶背离 + 分组专属过滤"""
+                              df: "pd.DataFrame" = None) -> tuple:
+        """硬过滤后，限制信号方向 + 最低得分阈值 + 成交量过滤 + MACD顶背离 + 分组专属过滤
+
+        Returns:
+            (SignalLevel, str): 信号级别 + 拦截原因(空字符串表示未拦截)
+        """
         if group_params is None:
             group_params = {}
 
@@ -276,41 +295,36 @@ class SignalFilter:
 
         ma60 = indicator_results.get("MA60")
         if ma60 is None:
-            return level
+            return level, ""
 
         # 空头区域不能出看多信号
         if ma60.direction == -1 and level.is_bullish:
-            return SignalLevel.NEUTRAL
+            return SignalLevel.NEUTRAL, "价格在MA60下方(空头区域)，不发出看多信号"
         # 多头区域不能出看空信号
         if ma60.direction == 1 and level.is_bearish:
-            return SignalLevel.NEUTRAL
+            return SignalLevel.NEUTRAL, "价格在MA60上方(多头区域)，不发出看空信号"
 
         # 最低得分阈值 (分组专属)
         score = indicator_results.get("SCORE")
         st = group_params.get("score_threshold", score_threshold)
         if score is not None and abs(score) < st:
-            return SignalLevel.NEUTRAL
+            return SignalLevel.NEUTRAL, f"得分{score:.1f}低于阈值{st}"
 
         # ── 第1层: 过热信号拦截 (动态Ceiling: 突破确认+均线排列加成) ──
-        # 使用原始ceiling(52)作为base, 动态Ceiling只在创新高+均线多头时放宽
-        # 不使用ADX覆盖后的ceiling, 避免ADX体制切换提前放宽导致假信号
-        is_breakout_signal = False  # 标记是否为突破信号, 供后续过滤层参考
+        is_breakout_signal = False
         if level.is_bullish:
             base_ceiling = original_ceiling if original_ceiling > 0 else group_params.get("score_ceiling", 0)
             if base_ceiling > 0 and score is not None and score > base_ceiling:
-                # 得分超过基础ceiling, 检查是否有动态加成
                 dynamic_ceiling = self.calc_dynamic_ceiling(
                     base_ceiling, df, indicator_results, group_params)
                 if score > dynamic_ceiling:
-                    return SignalLevel.NEUTRAL
+                    return SignalLevel.NEUTRAL, f"得分{score:.1f}超过上限{dynamic_ceiling:.0f}(过热信号)"
                 else:
-                    is_breakout_signal = True  # 动态ceiling放行 = 突破确认
-            # 即使得分未超ceiling, 也检查是否为突破(供后续放宽过滤)
+                    is_breakout_signal = True
             elif df is not None and len(df) >= 20:
                 import numpy as np
                 close_arr = df["close"].values.astype(float)
                 if close_arr[-1] > np.max(close_arr[-21:-1]):
-                    # 创20日新高, 标记为突破信号
                     is_breakout_signal = True
 
         # ── 第2层: 成交量过滤 (分组专属量比阈值) ──
@@ -320,7 +334,7 @@ class SignalFilter:
                 vr = vol.values.get("vol_ratio", 1.0)
                 vol_threshold = group_params.get("vol_ratio_threshold", 0.6)
                 if vr < vol_threshold:
-                    return SignalLevel.NEUTRAL
+                    return SignalLevel.NEUTRAL, f"量比{vr:.2f}低于阈值{vol_threshold}"
 
         # ── 第3层: ATR/Price波动率门槛 (突破信号放宽) ──
         if level.is_bullish:
@@ -330,11 +344,10 @@ class SignalFilter:
                 if atr_ind is not None:
                     atr_pct = atr_ind.values.get("atr_pct")
                     if atr_pct is not None:
-                        atr_ratio = atr_pct / 100.0  # atr_pct 是百分比, 转为小数
-                        # 突破信号: ATR放宽1.5倍 (突破时波动率自然偏高)
+                        atr_ratio = atr_pct / 100.0
                         effective_atr_max = atr_max * 1.5 if is_breakout_signal else atr_max
                         if atr_ratio > effective_atr_max:
-                            return SignalLevel.NEUTRAL
+                            return SignalLevel.NEUTRAL, f"ATR波动率{atr_ratio*100:.1f}%超过上限{effective_atr_max*100:.1f}%"
 
         # ── 第4层: MACD零轴位置过滤 ──
         if level.is_bullish:
@@ -344,7 +357,7 @@ class SignalFilter:
                 if macd is not None:
                     dif = macd.values.get("dif")
                     if dif is not None and dif <= 0:
-                        return SignalLevel.NEUTRAL
+                        return SignalLevel.NEUTRAL, f"MACD DIF({dif:.3f})在零轴下方"
 
         # ── 第5层: 价格偏离MA20过滤 (突破信号放宽) ──
         if level.is_bullish:
@@ -356,10 +369,9 @@ class SignalFilter:
                     price = ma20_ind.values.get("price")
                     if ma20_val and price and ma20_val > 0:
                         deviation = (price - ma20_val) / ma20_val
-                        # 突破信号: MA20偏离放宽3倍 (突破时价格自然远离MA20, 如涨停后偏离30%+)
                         effective_max_dev = max_dev * 3.0 if is_breakout_signal else max_dev
                         if deviation > effective_max_dev:
-                            return SignalLevel.NEUTRAL
+                            return SignalLevel.NEUTRAL, f"价格偏离MA20达{deviation*100:.1f}%超过上限{effective_max_dev*100:.1f}%"
 
         # ── 第6层: RSI超买过滤 ──
         if level.is_bullish:
@@ -369,22 +381,22 @@ class SignalFilter:
                 if rsi_ind is not None:
                     rsi_val = rsi_ind.values.get("rsi")
                     if rsi_val is not None and rsi_val > rsi_limit:
-                        return SignalLevel.NEUTRAL
+                        return SignalLevel.NEUTRAL, f"RSI({rsi_val:.0f})超买(>{rsi_limit})"
 
         # MACD顶背离降级: 强买入→买入, 买入→观望
         if level.is_bullish:
             macd = indicator_results.get("MACD")
             if macd is not None and macd.values.get("bearish_divergence", False):
                 if level == SignalLevel.STRONG_BUY:
-                    return SignalLevel.BUY
+                    return SignalLevel.BUY, "MACD顶背离，强买入降级为买入"
                 elif level == SignalLevel.BUY:
-                    return SignalLevel.NEUTRAL
+                    return SignalLevel.NEUTRAL, "MACD顶背离，买入降级为观望"
 
         # 大盘环境过滤: 指数在MA60下方时抑制买入信号
         if self.market_ma60_filter and level.is_bullish and self._market_ma60_direction == -1:
-            return SignalLevel.NEUTRAL
+            return SignalLevel.NEUTRAL, "大盘指数在MA60下方，抑制买入信号"
 
-        return level
+        return level, ""
 
     # ── 信号去重 ──
     def is_duplicate(self, symbol: str, level: SignalLevel,
@@ -399,6 +411,8 @@ class SignalFilter:
         """
         if not level.is_actionable:
             return False
+
+        self._ensure_history_loaded()
 
         direction = "bull" if level.is_bullish else "bear"
         key = f"{symbol}_{direction}"
@@ -427,10 +441,13 @@ class SignalFilter:
         """
         if not level.is_actionable:
             return
+        self._ensure_history_loaded()
         direction = "bull" if level.is_bullish else "bear"
         record_date = analysis_date if analysis_date is not None else date.today()
         self._history[f"{symbol}_{direction}"] = record_date.strftime("%Y-%m-%d")
-        self._save_history()
+        # 仅 LIVE 模式写盘, BACKTEST 模式纯内存
+        if get_mode() == RuntimeMode.LIVE:
+            self._save_history()
 
     def _load_history(self) -> dict:
         try:
@@ -450,6 +467,12 @@ class SignalFilter:
             pass
 
     def clear_history(self):
-        """清除信号去重历史 (每次新分析前调用, 避免旧记录拦截新信号)"""
+        """清除信号去重历史
+
+        - LIVE 模式: 清内存 + 清磁盘 (新分析前调用)
+        - BACKTEST 模式: 仅清内存 (不触碰磁盘, 保护实时数据)
+        """
         self._history = {}
-        self._save_history()
+        self._history_loaded = True  # 标记已加载, 避免回测模式从磁盘读取
+        if get_mode() == RuntimeMode.LIVE:
+            self._save_history()

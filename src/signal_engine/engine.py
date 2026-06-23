@@ -75,13 +75,31 @@ class SignalEngine:
 
         # Step 4: 交叉验证 → 信号级别
         level = self.validator.validate(indicator_results, hard_blocked=blocked)
+        block_detail = ""
+
+        # 如果 Validator 返回 NEUTRAL 且未被硬过滤, 分析类别共识情况
+        if not blocked and level == SignalLevel.NEUTRAL:
+            cat_summary = self.validator.summarize(indicator_results)
+            cat_names = {"trend": "趋势", "strength": "强度", "momentum": "动量", "volume": "量价"}
+            bull_cats = [cat_names.get(k, k) for k, v in cat_summary.items() if v.direction > 0]
+            bear_cats = [cat_names.get(k, k) for k, v in cat_summary.items() if v.direction < 0]
+            if bull_cats and not bear_cats:
+                block_detail = f"类别共识不足: 仅{'+'.join(bull_cats)}看多，需趋势+至少1类共振"
+            elif bear_cats and not bull_cats:
+                block_detail = f"类别共识不足: 仅{'+'.join(bear_cats)}看空"
+            elif bull_cats and bear_cats:
+                block_detail = f"多空矛盾: 看多[{'+'.join(bull_cats)}] vs 看空[{'+'.join(bear_cats)}]"
+            else:
+                block_detail = "所有类别均为中性，无明确方向"
 
         # Step 5: 硬过滤方向约束 + 分组专属过滤参数 (含ADX体制自适应覆盖)
         if not blocked:
-            level = self.filter.apply_hard_constraint(level, indicator_results,
+            level, filter_reason = self.filter.apply_hard_constraint(level, indicator_results,
                                                       score_threshold=25,
                                                       group_params=group_params,
                                                       df=df)
+            if filter_reason:
+                block_detail = filter_reason
 
         # Step 5.1: 获取ADX覆盖后的参数 (供Step6/7使用)
         if group_params:
@@ -94,6 +112,7 @@ class SignalEngine:
             gc_cooldown = effective_params.get("cooldown_days", None) if effective_params else None
             if self.filter.is_in_cooldown(symbol, analysis_date, True, group_cooldown=gc_cooldown):
                 level = SignalLevel.NEUTRAL
+                block_detail = f"冷却期内(卖出后{gc_cooldown or self.filter.cooldown_days}天禁止开仓)"
 
         # Step 7: 连亏暂停检查 (ADX体制自适应连亏阈值)
         if level.is_actionable and level.is_bullish:
@@ -101,11 +120,13 @@ class SignalEngine:
             suspend_d = effective_params.get("consecutive_loss_suspend", 0) if effective_params else 0
             if self.filter.is_suspended(symbol, analysis_date, max_cl, suspend_d):
                 level = SignalLevel.NEUTRAL
+                block_detail = f"连续亏损{max_cl}次，暂停{suspend_d}天"
 
         # Step 8: 信号去重检查 (使用实际分析日期)
         is_dup = self.filter.is_duplicate(symbol, level, analysis_date=analysis_date)
         if is_dup:
             level = SignalLevel.NEUTRAL
+            block_detail = f"信号去重({self.filter.dedup_days}天内已发同方向信号)"
 
         # Step 9: 记录信号 (使用实际分析日期)
         self.filter.record(symbol, level, analysis_date=analysis_date)
@@ -129,6 +150,7 @@ class SignalEngine:
             category_summary=category_summary,
             hard_filter_blocked=blocked,
             block_reason=block_reason,
+            block_detail=block_detail,
         )
 
     def analyze_batch(self, stock_data: Dict[str, pd.DataFrame]) -> List[SignalResult]:

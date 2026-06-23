@@ -73,10 +73,10 @@ class KLineCache:
 
         if start_date:
             query += " AND date >= ?"
-            params.append(start_date.replace("-", ""))
+            params.append(start_date)  # 缓存中日期格式为 YYYY-MM-DD (带横线)
         if end_date:
             query += " AND date <= ?"
-            params.append(end_date.replace("-", ""))
+            params.append(end_date)
 
         query += " ORDER BY date ASC"
 

@@ -73,7 +73,8 @@ class SignalResult:
     details: str                          # 详细分析
     category_summary: Dict[str, CategorySummary] = field(default_factory=dict)
     hard_filter_blocked: bool = False     # 是否被硬过滤拦截
-    block_reason: str = ""                # 拦截原因
+    block_reason: str = ""                # 拦截原因 (硬过滤)
+    block_detail: str = ""                # 详细拦截原因 (含所有降级步骤)
 
     def __repr__(self):
         return (f"<{self.symbol} {self.level.label} "

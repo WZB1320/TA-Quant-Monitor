@@ -40,7 +40,7 @@ indicators["SCORE"] = score
 level = validator.validate(indicators, hard_blocked=blocked)
 
 group_params = gc.get_all_group_params(code)
-level_after = filter_engine.apply_hard_constraint(level, indicators,
+level_after, _reason = filter_engine.apply_hard_constraint(level, indicators,
                                                   score_threshold=25,
                                                   group_params=group_params,
                                                   df=df_slice)

@@ -7,22 +7,28 @@
     weights = gc.get_regime_weights("000725")  # {"trending": {...}, ...}
     stop_mult = gc.get_atr_stop_mult("000725")  # 2.5
     boost = gc.get_max_per_stock_boost("000725")  # 1.2
+
+用户手动体制选择持久化到 data/user_preferences.json,
+与策略配置分离, 避免互相污染。服务重启后偏好保留。
 """
 import json
 import os
 from typing import Dict, Optional
 
+from src.config.user_preferences import UserPreferences
+
 
 class GroupConfig:
-    """分组配置 — 单例模式"""
+    """分组配置 — 单例模式 (策略参数只读, 用户偏好持久化)"""
 
     _instance = None
     _config = None
 
-    def __new__(cls):
+    def __new__(cls, user_prefs: UserPreferences = None):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._loaded = False
+            cls._instance._user_prefs = user_prefs  # 首次创建时注入
         return cls._instance
 
     def _load(self):
@@ -60,8 +66,9 @@ class GroupConfig:
             if presets:
                 self._manual_presets[group_name] = presets
 
-        # 用户手动选择的体制 (group_name → "trending"|"ranging"|"auto")
-        self._user_regime: Dict[str, str] = {}
+        # 用户手动选择的体制 — 持久化到 UserPreferences (懒初始化)
+        if self._user_prefs is None:
+            self._user_prefs = UserPreferences()
 
         self._loaded = True
 
@@ -73,27 +80,24 @@ class GroupConfig:
     # ── 手动模式（用户判断方向） ──
 
     def set_user_regime(self, group_name: str, regime: str):
-        """设置用户手动选择的体制模式
+        """设置用户手动选择的体制模式 (持久化到磁盘)
 
         Args:
             group_name: 分组名称
             regime: "trending" (趋势上涨) / "ranging" (震荡) / "auto" (自动判断)
         """
         self._load()
-        if regime in ("trending", "ranging"):
-            self._user_regime[group_name] = regime
-        else:
-            self._user_regime.pop(group_name, None)
+        self._user_prefs.set_regime(group_name, regime)
 
     def get_user_regime(self, group_name: str) -> str:
-        """获取用户手动选择的体制模式"""
+        """获取用户手动选择的体制模式 (从磁盘读取)"""
         self._load()
-        return self._user_regime.get(group_name, "auto")
+        return self._user_prefs.get_regime(group_name)
 
     def clear_user_regime(self):
         """清除所有用户手动选择（恢复自动判断）"""
         self._load()
-        self._user_regime.clear()
+        self._user_prefs.clear_all()
 
     def _merge_preset(self, code: str, group_config: dict) -> dict:
         """将手动模式预设合并到分组配置中"""
@@ -101,7 +105,7 @@ class GroupConfig:
         group_name = self._code_to_group.get(code)
         if not group_name:
             return group_config
-        regime = self._user_regime.get(group_name)
+        regime = self._user_prefs.get_regime(group_name)
         if not regime or regime == "auto":
             return group_config
         presets = self._manual_presets.get(group_name, {})
@@ -200,9 +204,9 @@ class GroupConfig:
         gc = self._get_group_config(code)
         gc = self._merge_preset(code, gc)
         default = self._default
-        # 手动模式: 获取 forced_regime
+        # 手动模式: 获取 forced_regime (从持久化偏好读取)
         group_name = self._code_to_group.get(code)
-        forced_regime = self._user_regime.get(group_name, "auto") if group_name else "auto"
+        forced_regime = self._user_prefs.get_regime(group_name) if group_name else "auto"
         if forced_regime == "auto":
             forced_regime = None
         return {

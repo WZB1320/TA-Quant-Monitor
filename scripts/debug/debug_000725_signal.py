@@ -48,7 +48,7 @@ for target_date in ['2026-05-19', '2026-05-20', '2026-05-21', '2026-05-22', '202
 
     # Step 5: 硬过滤方向约束
     group_params = gc.get_all_group_params(code)
-    level_after = filter_engine.apply_hard_constraint(level, indicators,
+    level_after, _reason = filter_engine.apply_hard_constraint(level, indicators,
                                                       score_threshold=25,
                                                       group_params=group_params,
                                                       df=df_slice)

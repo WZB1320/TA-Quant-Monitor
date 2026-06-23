@@ -53,7 +53,7 @@ for target_date in ['2026-05-21', '2026-05-22', '2026-05-25', '2026-05-26']:
     ceiling_pass = score <= dynamic_ceiling if base_ceiling > 0 else True
 
     # 完整约束
-    level_after = filter_engine.apply_hard_constraint(level, indicators,
+    level_after, _reason = filter_engine.apply_hard_constraint(level, indicators,
                                                       score_threshold=25,
                                                       group_params=group_params,
                                                       df=df_slice)
