@@ -66,27 +66,23 @@ for g in groups_order:
         params = gc.get_all_group_params(r.symbol)
         sc_threshold = params.get("score_threshold", 25)
         sc_ceiling = params.get("score_ceiling", 0)
-        cooldown = params.get("cooldown_days", 5)
 
-        # 判断是否在冷却期
-        in_cooldown = sig_engine.filter.is_in_cooldown(r.symbol, None, True, group_cooldown=cooldown)
+        # 执行约束 (来自 SignalResult.execution, 由 classifier 接入后填充)
+        execution = r.execution
+        if execution is None:
+            # 向后兼容: 无 execution 时构造默认值
+            from src.signal_engine.classifier import ExecutionConstraint
+            execution = ExecutionConstraint()
 
-        # 判断是否通过得分阈值
-        score_pass = sc_threshold <= r.score <= (sc_ceiling if sc_ceiling > 0 else 100)
-
-        # 综合判断
-        if r.level.is_bullish and r.level.is_actionable and score_pass and not in_cooldown:
-            action = "★ 可操作"
-        elif r.level.is_bullish and r.level.is_actionable and not score_pass:
-            action = "△ 得分不达标"
-        elif r.level.is_bullish and r.level.is_actionable and in_cooldown:
-            action = "○ 冷却期"
-        elif r.level.is_bullish and not r.level.is_actionable:
-            action = "  关注"
-        elif r.level.is_bearish:
-            action = "  偏空"
+        # 执行状态标签 (独立于 7 级信号, 仅表示"能否操作")
+        if r.hard_filter_blocked:
+            exec_tag = "✗ 硬过滤"
+        elif not r.level.is_actionable:
+            exec_tag = "— 无需操作"
+        elif execution.is_executable:
+            exec_tag = "★ 可执行"
         else:
-            action = "  观望"
+            exec_tag = f"○ {execution.blocking_reason[:12]}"
 
         # 获取 MA60 方向
         ma60_val = ir.get("MA60")
@@ -96,11 +92,18 @@ for g in groups_order:
             if ma60_v is not None:
                 ma60_dir_str = f"MA60={ma60_v:.2f} | {'多头' if close > ma60_v else '空头'}"
 
-        print(f"  {r.symbol} | {latest_date} | 收盘 {close:.2f} | {action}")
-        print(f"    信号: {r.level.label} | 得分: {r.score:+.1f} | 置信度: {r.confidence:.0%}")
+        # 降级轨迹 (若有)
+        demotion_info = ""
+        if r.demotion_chain:
+            demotion_info = f" | 降级: {' → '.join(r.demotion_chain)}"
+
+        print(f"  {r.symbol} | {latest_date} | 收盘 {close:.2f} | {exec_tag}")
+        print(f"    信号: {r.level.label} | 得分: {r.score:+.1f} | 置信度: {r.confidence:.0%}{demotion_info}")
         print(f"    阈值: [{sc_threshold}-{sc_ceiling if sc_ceiling else '无上限'}] | {ma60_dir_str}")
         if r.hard_filter_blocked:
             print(f"    拦截: {r.block_reason}")
+        if r.block_detail and not r.hard_filter_blocked:
+            print(f"    拦截: {r.block_detail}")
         print(f"    理由: {r.reason}")
 
         # 关键指标
@@ -126,19 +129,17 @@ for g in groups_order:
         print()
 
 print(f"\n{'=' * 85}")
-print("  操作建议汇总")
+print("  可执行信号汇总")
 print(f"{'=' * 85}")
 
 actionable = []
 for r in results:
-    params = gc.get_all_group_params(r.symbol)
-    sc_threshold = params.get("score_threshold", 25)
-    sc_ceiling = params.get("score_ceiling", 0)
-    cooldown = params.get("cooldown_days", 5)
-    score_pass = sc_threshold <= r.score <= (sc_ceiling if sc_ceiling > 0 else 100)
-    in_cooldown = sig_engine.filter.is_in_cooldown(r.symbol, None, True, group_cooldown=cooldown)
-
-    if r.level.is_bullish and r.level.is_actionable and score_pass and not in_cooldown:
+    execution = r.execution
+    if execution is None:
+        from src.signal_engine.classifier import ExecutionConstraint
+        execution = ExecutionConstraint()
+    # 可执行: 信号可操作 + 无执行约束阻断
+    if r.level.is_bullish and r.level.is_actionable and execution.is_executable:
         actionable.append(r)
 
 if actionable:

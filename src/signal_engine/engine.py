@@ -1,14 +1,21 @@
 """
 信号引擎 (SignalEngine) — 核心决策层
 
-处理流程:
-  指标结果 → 硬过滤(MA60+ADX) → 加权评分 → 交叉验证 → 信号去重 → 最终信号
+处理流程 (v2 — classifier 统一定级):
+  指标结果 → 硬过滤(数据检查) → 加权评分 → classifier定级 → filter执行约束 → 最终信号
 
 职责:
   1. 接收 IndicatorPipeline 的产出
-  2. 按优先级执行过滤和验证
-  3. 产出结构化 SignalResult
-  4. 生成可读的分析报告
+  2. 调用 SignalClassifier 统一定级 (共振+得分+背离+方向+过热)
+  3. 调用 SignalFilter 产出执行约束 (冷却/连亏/去重, 不改 level)
+  4. 产出结构化 SignalResult
+  5. 生成可读的分析报告
+
+变更说明 (v2):
+  - 定级权收归 SignalClassifier, validator 退化为共识计算器
+  - filter 不再通过 apply_hard_constraint 改 level, 改为产出 ExecutionConstraint
+  - MACD背离等结构问题由 classifier 平滑降级(压一档), 非直接砍观望
+  - 展示层应展示 level.label + execution, 不再造 action 第二套标签
 """
 from typing import Dict, List, Optional
 from datetime import date
@@ -20,6 +27,9 @@ from src.signal_engine.signals import SignalLevel, SignalResult, CategorySummary
 from src.signal_engine.scorer import Scorer, CATEGORY_WEIGHTS
 from src.signal_engine.validator import Validator
 from src.signal_engine.filter import SignalFilter
+from src.signal_engine.classifier import (
+    SignalClassifier, ClassificationInput, ExecutionConstraint,
+)
 
 
 class SignalEngine:
@@ -28,7 +38,8 @@ class SignalEngine:
     def __init__(self, dedup_days: int = 5, group_config=None):
         self.pipeline = IndicatorPipeline()
         self.scorer = Scorer()
-        self.validator = Validator()
+        self.validator = Validator()       # 退化为共识计算器 (summarize)
+        self.classifier = SignalClassifier()  # 唯一定级器 (v2 新增)
         self.filter = SignalFilter(dedup_days=dedup_days)
         self.group_config = group_config  # GroupConfig 实例, 可选
 
@@ -73,16 +84,26 @@ class SignalEngine:
         # Step 3.1: 将得分注入 indicator_results (供 filter 使用)
         indicator_results["SCORE"] = score
 
-        # Step 4: 交叉验证 → 信号级别
-        level = self.validator.validate(indicator_results, hard_blocked=blocked)
-        block_detail = ""
+        # Step 4: 类别共识计算 (validator 退化为共识计算器)
+        category_summary = self.validator.summarize(indicator_results)
 
-        # 如果 Validator 返回 NEUTRAL 且未被硬过滤, 分析类别共识情况
-        if not blocked and level == SignalLevel.NEUTRAL:
-            cat_summary = self.validator.summarize(indicator_results)
+        # Step 5: classifier 统一定级 (共振+得分门槛+背离+方向+过热)
+        clf_result = self.classifier.classify(ClassificationInput(
+            score=score,
+            category_consensus=category_summary,
+            indicator_results=indicator_results,
+            group_params=group_params,
+            hard_blocked=blocked,
+            block_reason=block_reason,
+        ))
+        level = clf_result.level
+        block_detail = clf_result.demotion_reason
+
+        # Step 5.1: 若 classifier 未降级且仍为 NEUTRAL, 补充共识分析说明
+        if not blocked and level == SignalLevel.NEUTRAL and not block_detail:
             cat_names = {"trend": "趋势", "strength": "强度", "momentum": "动量", "volume": "量价"}
-            bull_cats = [cat_names.get(k, k) for k, v in cat_summary.items() if v.direction > 0]
-            bear_cats = [cat_names.get(k, k) for k, v in cat_summary.items() if v.direction < 0]
+            bull_cats = [cat_names.get(k, k) for k, v in category_summary.items() if v.direction > 0]
+            bear_cats = [cat_names.get(k, k) for k, v in category_summary.items() if v.direction < 0]
             if bull_cats and not bear_cats:
                 block_detail = f"类别共识不足: 仅{'+'.join(bull_cats)}看多，需趋势+至少1类共振"
             elif bear_cats and not bull_cats:
@@ -92,41 +113,62 @@ class SignalEngine:
             else:
                 block_detail = "所有类别均为中性，无明确方向"
 
-        # Step 5: 硬过滤方向约束 + 分组专属过滤参数 (含ADX体制自适应覆盖)
-        if not blocked:
-            level, filter_reason = self.filter.apply_hard_constraint(level, indicator_results,
-                                                      score_threshold=25,
-                                                      group_params=group_params,
-                                                      df=df)
+        # Step 6: filter 细节过滤 (量比/ATR/RSI超买等, 仍由 filter 负责)
+        #         这些过滤将级别降为 NEUTRAL, 原因记入 block_detail
+        if not blocked and level.is_bullish:
+            level, filter_reason = self.filter.apply_hard_constraint(
+                level, indicator_results,
+                score_threshold=25,
+                group_params=group_params,
+                df=df,
+            )
             if filter_reason:
                 block_detail = filter_reason
 
-        # Step 5.1: 获取ADX覆盖后的参数 (供Step6/7使用)
+        # Step 7: 获取ADX覆盖后的参数 (供执行约束使用)
         if group_params:
             effective_params = self.filter._apply_regime_filter_overrides(group_params, indicator_results)
         else:
             effective_params = {}
 
-        # Step 6: 冷却期检查 (ADX体制自适应冷却天数)
+        # Step 8: 执行约束检查 (冷却/连亏/去重) — 产出 ExecutionConstraint
+        #         约束不改 level 本身, 但为向后兼容, 受约束的信号仍降为 NEUTRAL
+        execution = ExecutionConstraint()
+
         if level.is_actionable and level.is_bullish:
             gc_cooldown = effective_params.get("cooldown_days", None) if effective_params else None
             if self.filter.is_in_cooldown(symbol, analysis_date, True, group_cooldown=gc_cooldown):
-                level = SignalLevel.NEUTRAL
-                block_detail = f"冷却期内(卖出后{gc_cooldown or self.filter.cooldown_days}天禁止开仓)"
+                execution.in_cooldown = True
+                execution.cooldown_reason = f"冷却期内(卖出后{gc_cooldown or self.filter.cooldown_days}天禁止开仓)"
 
-        # Step 7: 连亏暂停检查 (ADX体制自适应连亏阈值)
         if level.is_actionable and level.is_bullish:
             max_cl = effective_params.get("max_consecutive_losses", 0) if effective_params else 0
             suspend_d = effective_params.get("consecutive_loss_suspend", 0) if effective_params else 0
             if self.filter.is_suspended(symbol, analysis_date, max_cl, suspend_d):
-                level = SignalLevel.NEUTRAL
-                block_detail = f"连续亏损{max_cl}次，暂停{suspend_d}天"
+                execution.suspended = True
+                execution.suspend_reason = f"连续亏损{max_cl}次，暂停{suspend_d}天"
 
-        # Step 8: 信号去重检查 (使用实际分析日期)
+        # 信号去重检查
         is_dup = self.filter.is_duplicate(symbol, level, analysis_date=analysis_date)
         if is_dup:
+            execution.is_duplicate = True
+            execution.duplicate_reason = f"信号去重({self.filter.dedup_days}天内已发同方向信号)"
+
+        # 得分是否达标 (供展示层判断"得分不达标")
+        sc_threshold = effective_params.get("score_threshold", 25) if effective_params else 25
+        sc_ceiling = effective_params.get("score_ceiling", 0) if effective_params else 0
+        execution.score_passes = sc_threshold <= abs(score) <= (sc_ceiling if sc_ceiling > 0 else 100)
+        if not execution.score_passes:
+            if abs(score) < sc_threshold:
+                execution.score_reason = f"得分{score:+.1f}低于阈值{sc_threshold}"
+            else:
+                execution.score_reason = f"得分{score:+.1f}超过上限{sc_ceiling:.0f}"
+
+        # 向后兼容: 执行约束阻断时, level 降为 NEUTRAL, 原因记入 block_detail
+        # (后续展示层改造后, 可保留原 level 仅在 execution 中标记不可执行)
+        if not execution.is_executable and level.is_bullish:
             level = SignalLevel.NEUTRAL
-            block_detail = f"信号去重({self.filter.dedup_days}天内已发同方向信号)"
+            block_detail = execution.blocking_reason
 
         # Step 9: 记录信号 (使用实际分析日期)
         self.filter.record(symbol, level, analysis_date=analysis_date)
@@ -135,7 +177,6 @@ class SignalEngine:
         confidence = self._calc_confidence(level, indicator_results)
 
         # Step 11: 构建结果
-        category_summary = self.validator.summarize(indicator_results)
         reason, details = self._build_reason(symbol, level, score, confidence,
                                              indicator_results, category_summary,
                                              cat_scores, blocked, block_reason)
@@ -151,6 +192,9 @@ class SignalEngine:
             hard_filter_blocked=blocked,
             block_reason=block_reason,
             block_detail=block_detail,
+            initial_level=clf_result.initial_level,
+            demotion_chain=clf_result.demotion_chain,
+            execution=execution,
         )
 
     def analyze_batch(self, stock_data: Dict[str, pd.DataFrame]) -> List[SignalResult]:

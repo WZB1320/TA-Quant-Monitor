@@ -66,7 +66,7 @@ class CategorySummary:
 class SignalResult:
     """最终信号"""
     symbol: str                           # 股票代码
-    level: SignalLevel                    # 信号级别
+    level: SignalLevel                    # 信号级别 (经 classifier 定级 + filter 约束后的最终级别)
     score: float                          # 综合得分 (-100 ~ +100)
     confidence: float                     # 置信度 0~1
     reason: str                           # 一句话总结
@@ -75,6 +75,10 @@ class SignalResult:
     hard_filter_blocked: bool = False     # 是否被硬过滤拦截
     block_reason: str = ""                # 拦截原因 (硬过滤)
     block_detail: str = ""                # 详细拦截原因 (含所有降级步骤)
+    # ── 新增字段 (向后兼容, 可选) ──
+    initial_level: SignalLevel = SignalLevel.NEUTRAL  # classifier 基础定级(未经约束降级)
+    demotion_chain: list = field(default_factory=list)  # 降级轨迹(调试用)
+    execution: object = None              # ExecutionConstraint 执行约束(冷却/连亏/去重/得分)
 
     def __repr__(self):
         return (f"<{self.symbol} {self.level.label} "

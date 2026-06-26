@@ -142,6 +142,9 @@ class MACDIndicator(BaseIndicator):
         "fast": 12,
         "slow": 26,
         "signal": 9,
+        # ── 新增: 柱状线二次放大参数 ──
+        "bar_expansion_lookback": 10,    # 二次放大检测窗口
+        "bar_expansion_max_bonus": 0.20, # 二次放大最大强度加成
     }
 
     def calculate(self, df: pd.DataFrame, params: dict = None) -> IndicatorResult:
@@ -149,6 +152,8 @@ class MACDIndicator(BaseIndicator):
         fast = p["fast"]
         slow = p["slow"]
         signal = p["signal"]
+        bar_lookback = p["bar_expansion_lookback"]
+        bar_max_bonus = p["bar_expansion_max_bonus"]
 
         close = df["close"].values.astype(np.float64)
 
@@ -175,9 +180,12 @@ class MACDIndicator(BaseIndicator):
             bar_narrowing = [abs(b) for b in macd_bar[-3:]]
             bar_shrinking = bar_narrowing[-1] < bar_narrowing[-2] < bar_narrowing[-3]
             if dif_rising and bar_shrinking:
+                # 底背离加成: 底部企稳信号更可靠
+                strength = 0.60 if bullish_div else 0.45
+                div_note = ", 底背离加成" if bullish_div else ""
                 return self._make_result(
-                    1, "buy", 0.45,
-                    f"MACD左侧潜伏: DIF回升+柱收缩 (DIF={latest_dif:.3f}), 止跌企稳信号",
+                    1, "buy", strength,
+                    f"MACD左侧潜伏: DIF回升+柱收缩 (DIF={latest_dif:.3f}), 止跌企稳信号{div_note}",
                     dif=round(latest_dif, 3), dea=round(latest_dea, 3),
                     bar=round(latest_bar, 3),
                     bearish_divergence=bearish_div, bullish_divergence=bullish_div
@@ -198,9 +206,12 @@ class MACDIndicator(BaseIndicator):
                     bearish_divergence=bearish_div, bullish_divergence=bullish_div
                 )
             else:
+                # 底背离加成: 零轴下金叉+底背离 = 反转信号更可靠
+                strength = 0.70 if bullish_div else 0.5
+                div_note = ", 底背离反转" if bullish_div else ""
                 return self._make_result(
-                    1, "buy", 0.5,
-                    f"MACD零轴下方金叉 (弱势反弹信号)",
+                    1, "buy", strength,
+                    f"MACD零轴下方金叉 (弱势反弹信号){div_note}",
                     dif=round(latest_dif, 3), dea=round(latest_dea, 3),
                     bar=round(latest_bar, 3),
                     bearish_divergence=bearish_div, bullish_divergence=bullish_div
@@ -218,13 +229,23 @@ class MACDIndicator(BaseIndicator):
         elif latest_dif > 0 and latest_dif > latest_dea:
             bar_strengthening = latest_bar > prev_bar
             base_strength = 0.4 + (0.2 if bar_strengthening else 0)
+
+            # 柱状线二次放大加成: 趋势休整后再次加速
+            second_exp, exp_strength = self._detect_bar_second_expansion(
+                macd_bar, lookback=bar_lookback
+            )
+            if second_exp:
+                base_strength = min(base_strength * (1 + exp_strength * bar_max_bonus), 1.0)
+
             strength = base_strength * 0.6 if bearish_div else base_strength  # 顶背离降级
+            exp_note = f", 柱二次放大({exp_strength:.0%})" if second_exp else ""
             return self._make_result(
                 1, "buy", strength,
-                f"MACD多头区域, DIF={latest_dif:.3f}, 柱{'在增强' if bar_strengthening else '在减弱'}{div_suffix}",
+                f"MACD多头区域, DIF={latest_dif:.3f}, 柱{'在增强' if bar_strengthening else '在减弱'}{exp_note}{div_suffix}",
                 dif=round(latest_dif, 3), dea=round(latest_dea, 3),
                 bar=round(latest_bar, 3),
-                bearish_divergence=bearish_div, bullish_divergence=bullish_div
+                bearish_divergence=bearish_div, bullish_divergence=bullish_div,
+                bar_second_expansion=second_exp, bar_expansion_strength=round(exp_strength, 2)
             )
         elif latest_dif > 0:
             return self._make_result(
@@ -235,9 +256,12 @@ class MACDIndicator(BaseIndicator):
                 bearish_divergence=bearish_div, bullish_divergence=bullish_div
             )
         else:
+            # 底背离降级: 空头区域+底背离 = 下跌动能减弱, 看空强度降低
+            strength = 0.15 if bullish_div else 0.3
+            div_note = ", 底背离(动能减弱)" if bullish_div else ""
             return self._make_result(
-                -1, "sell", 0.3,
-                f"MACD空头区域, DIF={latest_dif:.3f}",
+                -1, "sell", strength,
+                f"MACD空头区域, DIF={latest_dif:.3f}{div_note}",
                 dif=round(latest_dif, 3), dea=round(latest_dea, 3),
                 bar=round(latest_bar, 3),
                 bearish_divergence=bearish_div, bullish_divergence=bullish_div
@@ -292,6 +316,62 @@ class MACDIndicator(BaseIndicator):
                 recent_dif[trough_idx] > before_trough_dif[prev_trough_idx]):
             return True
         return False
+
+    @staticmethod
+    def _detect_bar_second_expansion(macd_bar: np.ndarray,
+                                      lookback: int = 10) -> tuple:
+        """检测柱状线二次放大
+
+        逻辑: 柱状线经历 放大→收缩→再放大 的过程, 表示趋势休整后再次加速
+
+        Returns:
+            (is_second_expansion: bool, expansion_strength: float 0~1)
+        """
+        if len(macd_bar) < lookback:
+            return False, 0.0
+
+        bars = macd_bar[-lookback:]
+
+        # 当前柱状线必须为正且在放大
+        if bars[-1] <= 0 or bars[-1] <= bars[-2]:
+            return False, 0.0
+
+        # 在前 lookback-3 天找柱状线的局部极小值(收缩点)
+        # 极小值: 比前一天小, 且后一天开始放大
+        contraction_idx = None
+        search_range = min(lookback - 3, 7)  # 最多往前找7天
+        for i in range(1, search_range):
+            if bars[i] < bars[i - 1] and bars[i + 1] > bars[i]:
+                contraction_idx = i
+                break
+
+        if contraction_idx is None:
+            return False, 0.0
+
+        # 从收缩点开始, 柱状线应整体放大趋势(允许单日小幅回调)
+        expansion_bars = bars[contraction_idx:]
+        if len(expansion_bars) < 3:
+            return False, 0.0
+
+        expanding = True
+        for i in range(1, len(expansion_bars)):
+            if expansion_bars[i] < expansion_bars[i - 1] * 0.7:  # 允许30%回调
+                expanding = False
+                break
+
+        if not expanding:
+            return False, 0.0
+
+        # 二次放大幅度: 当前柱状线 / 收缩点柱状线绝对值, 3倍封顶
+        contraction_val = abs(bars[contraction_idx])
+        current_val = abs(bars[-1])
+        if contraction_val > 1e-10:
+            expansion_ratio = current_val / contraction_val
+        else:
+            expansion_ratio = 1.0
+
+        expansion_strength = min(expansion_ratio / 3.0, 1.0)
+        return True, expansion_strength
 
     @staticmethod
     def _macd(data: np.ndarray, fast=12, slow=26, signal=9):
