@@ -89,6 +89,17 @@ class GroupConfig:
         self._load()
         self._user_prefs.set_regime(group_name, regime)
 
+    def set_user_regime_all(self, regime: str):
+        """将体制选择应用到所有分组 (未选择分组时使用)
+
+        Args:
+            regime: "trending" / "ranging" / "auto"
+        """
+        self._load()
+        group_names = set(self._code_to_group.values())
+        for group_name in group_names:
+            self._user_prefs.set_regime(group_name, regime)
+
     def get_user_regime(self, group_name: str) -> str:
         """获取用户手动选择的体制模式 (从磁盘读取)"""
         self._load()

@@ -109,6 +109,41 @@
       "code": "600549",
       "name": "厦门钨业",
       "market": "sh"
+    },
+    {
+      "code": "000100",
+      "name": "TCL科技",
+      "market": "sz"
+    },
+    {
+      "code": "300673",
+      "name": "佩蒂股份",
+      "market": "sz"
+    },
+    {
+      "code": "600487",
+      "name": "亨通光电",
+      "market": "sh"
+    },
+    {
+      "code": "600875",
+      "name": "东方电气",
+      "market": "sh"
+    },
+    {
+      "code": "600406",
+      "name": "国电南瑞",
+      "market": "sh"
+    },
+    {
+      "code": "002507",
+      "name": "涪陵榨菜",
+      "market": "sz"
+    },
+    {
+      "code": "000938",
+      "name": "紫光股份",
+      "market": "sz"
     }
   ]
 }

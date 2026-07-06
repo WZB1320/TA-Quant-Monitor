@@ -160,9 +160,10 @@ class TestWeakBuy:
         """单类别(动量)≥2指标看多, 其他中性 → 弱买入
 
         需手动构造 consensus=2 触发"单类别强信号"规则
+        得分需≥阈值(默认25), 否则被 score_gate 降为观望
         """
         material = _material(
-            score=15.0,
+            score=30.0,
             consensus={"momentum": _cat("momentum", 1, consensus=2, dissensus=0)},
         )
         result = classifier.classify(material)
@@ -171,7 +172,7 @@ class TestWeakBuy:
     def test_weak_buy_momentum_plus_volume(self, classifier):
         """动量+量价偏多(无趋势) → 弱买入"""
         material = _material(
-            score=20.0,
+            score=30.0,
             consensus=_consensus_map(momentum=1, volume=1),
         )
         result = classifier.classify(material)
@@ -214,7 +215,7 @@ class TestWeakSell:
     def test_weak_sell_single_category(self, classifier):
         """动量+量价看空(无趋势) → 弱卖出"""
         material = _material(
-            score=-20.0,
+            score=-30.0,
             consensus=_consensus_map(momentum=-1, volume=-1),
         )
         result = classifier.classify(material)
@@ -222,7 +223,7 @@ class TestWeakSell:
 
     def test_weak_sell_momentum_plus_volume(self, classifier):
         material = _material(
-            score=-20.0,
+            score=-30.0,
             consensus=_consensus_map(momentum=-1, volume=-1),
         )
         result = classifier.classify(material)
@@ -258,38 +259,58 @@ class TestStrongSell:
 # ════════════════════════════════════════════════════════════════
 
 class TestScoreGate:
-    """得分低于 score_threshold → 降为观望"""
+    """得分门槛: BUY及以上保留, WEAK_BUY受门槛约束(v2优化)"""
 
-    def test_score_below_threshold_demotes_to_neutral(self, classifier):
-        """强买入但得分低于阈值 → 观望"""
+    def test_strong_buy_below_threshold_keeps_level(self, classifier):
+        """强买入但得分低于阈值 → 保持强买入(结构共振已足够强)"""
         material = _material(
             score=20.0,  # 低于阈值25
             consensus=_consensus_map(trend=1, momentum=1, volume=1),
             group_params={"score_threshold": 25},
         )
         result = classifier.classify(material)
-        assert result.level == SignalLevel.NEUTRAL
-        assert "低于阈值" in result.demotion_reason
+        assert result.level == SignalLevel.STRONG_BUY
 
-    def test_score_above_threshold_keeps_level(self, classifier):
-        """强买入且得分达标 → 保持强买入"""
+    def test_buy_below_threshold_keeps_level(self, classifier):
+        """买入但得分低于阈值 → 保持买入(结构共振达标, 不受得分门槛约束)"""
         material = _material(
-            score=48.7,
-            consensus=_consensus_map(trend=1, momentum=1, volume=1),
+            score=20.0,  # 低于阈值45
+            consensus=_consensus_map(trend=1, momentum=1),
+            group_params={"score_threshold": 45},
+        )
+        result = classifier.classify(material)
+        assert result.level == SignalLevel.BUY
+
+    def test_weak_buy_below_threshold_demotes_to_neutral(self, classifier):
+        """弱买入且得分低于阈值 → 观望(弱信号需得分确认)"""
+        material = _material(
+            score=5.0,  # 低于阈值25
+            consensus={"momentum": _cat("momentum", 1, consensus=2, dissensus=0)},
             group_params={"score_threshold": 25},
         )
         result = classifier.classify(material)
-        assert result.level == SignalLevel.STRONG_BUY
+        assert result.level == SignalLevel.NEUTRAL
+        assert "低于阈值" in result.demotion_reason
 
-    def test_score_gate_not_applied_to_weak_signals(self, classifier):
-        """弱买入不受得分门槛约束(仅可操作信号受约束)"""
+    def test_weak_buy_above_threshold_keeps_level(self, classifier):
+        """弱买入且得分达标 → 保持弱买入"""
         material = _material(
-            score=5.0,  # 远低于阈值
+            score=30.0,  # 高于阈值25
             consensus={"momentum": _cat("momentum", 1, consensus=2, dissensus=0)},
             group_params={"score_threshold": 25},
         )
         result = classifier.classify(material)
         assert result.level == SignalLevel.WEAK_BUY
+
+    def test_strong_sell_below_threshold_keeps_level(self, classifier):
+        """强卖出但得分绝对值低于阈值 → 保持强卖出(卖出侧对称)"""
+        material = _material(
+            score=-20.0,  # |score|低于阈值25
+            consensus=_consensus_map(trend=-1, momentum=-1, volume=-1),
+            group_params={"score_threshold": 25},
+        )
+        result = classifier.classify(material)
+        assert result.level == SignalLevel.STRONG_SELL
 
 
 # ════════════════════════════════════════════════════════════════
@@ -354,7 +375,7 @@ class TestDirectionConstraint:
     """MA60空头区域不出看多信号, 多头区域不出看空信号"""
 
     def test_bullish_in_bearish_zone_demoted(self, classifier):
-        """强买入但MA60空头 → 观望"""
+        """强买入但MA60空头 → 压一档降级为买入(平滑降级)"""
         indicators = {"MA60": _ind("MA60", "trend", -1)}
         material = _material(
             score=48.7,
@@ -363,11 +384,12 @@ class TestDirectionConstraint:
             group_params={"score_threshold": 25},
         )
         result = classifier.classify(material)
-        assert result.level == SignalLevel.NEUTRAL
+        assert result.level == SignalLevel.BUY
         assert "MA60下方" in result.demotion_reason
+        assert "强买入→买入" in result.demotion_reason
 
     def test_bearish_in_bullish_zone_demoted(self, classifier):
-        """强卖出但MA60多头 → 观望"""
+        """强卖出但MA60多头 → 压一档降级为卖出(平滑降级)"""
         indicators = {"MA60": _ind("MA60", "trend", 1)}
         material = _material(
             score=-48.7,
@@ -376,8 +398,9 @@ class TestDirectionConstraint:
             group_params={"score_threshold": 25},
         )
         result = classifier.classify(material)
-        assert result.level == SignalLevel.NEUTRAL
+        assert result.level == SignalLevel.SELL
         assert "MA60上方" in result.demotion_reason
+        assert "强卖出→卖出" in result.demotion_reason
 
 
 # ════════════════════════════════════════════════════════════════
@@ -583,7 +606,7 @@ class TestDemotionRecording:
         assert result.demotion_reason == ""
 
     def test_multiple_demotions_recorded(self, classifier):
-        """多重降级: MACD背离(强买入→买入) + 得分低于阈值(→观望)"""
+        """多重降级: MACD背离(强买入→买入), 得分门槛不再砍BUY及以上(v2)"""
         indicators = {
             "MACD": _ind("MACD", "trend", 1, bearish_divergence=True),
             "MA60": _ind("MA60", "trend", 1),
@@ -595,7 +618,7 @@ class TestDemotionRecording:
             group_params={"score_threshold": 25},
         )
         result = classifier.classify(material)
-        # 强买入 →(MACD背离)→ 买入 →(得分低)→ 观望
-        assert result.level == SignalLevel.NEUTRAL
+        # 强买入 →(MACD背离)→ 买入 (得分门槛不再砍BUY, v2优化)
+        assert result.level == SignalLevel.BUY
         assert result.initial_level == SignalLevel.STRONG_BUY
         assert len(result.demotion_chain) >= 1

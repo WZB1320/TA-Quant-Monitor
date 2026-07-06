@@ -1,3 +1,9 @@
 {
-  "regime_overrides": {}
+  "regime_overrides": {
+    "科技成长型": "trending",
+    "机械制造型": "trending",
+    "消费稳健型": "trending",
+    "周期资源型": "trending",
+    "医药创新型": "trending"
+  }
 }

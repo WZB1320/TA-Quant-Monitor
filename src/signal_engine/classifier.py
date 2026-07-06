@@ -228,14 +228,22 @@ class SignalClassifier:
     def _apply_score_gate(self, level: SignalLevel,
                           material: ClassificationInput) -> Tuple[SignalLevel, str]:
         """
-        得分低于 score_threshold → 降为观望
+        得分低于 score_threshold → 降级处理
 
-        注意: 得分门槛是定级条件之一，不再是 filter 的事后砍刀
-        仅对可操作信号(buy/sell以上)生效，弱信号不受得分门槛约束
+        优化逻辑 (v2):
+          - BUY 及以上 (含强买入): 结构共振已足够强, 得分门槛不砍, 保留级别
+          - WEAK_BUY: 得分低于阈值 → 降为观望 (弱信号需得分确认)
+          - 卖出侧对称: SELL 及以上保留, WEAK_SELL 受门槛约束
+
+        理由: 得分受量价类单指标偏空等因素拖累, 可能低于门槛,
+              但只要多类共振结构成立(趋势+至少1类), 信号本身是可靠的。
+              得分门槛应只过滤"单类别弱信号", 不应误杀"多类共振达标"的信号。
         """
-        if not level.is_actionable:
+        # BUY/STRONG_BUY/SELL/STRONG_SELL: 结构共振已达标, 不受得分门槛约束
+        if abs(level.value) >= 2:
             return level, ""
 
+        # WEAK_BUY/WEAK_SELL: 弱信号需得分确认
         threshold = material.group_params.get("score_threshold", 25)
         if abs(material.score) < threshold:
             return SignalLevel.NEUTRAL, f"得分{material.score:+.1f}低于阈值{threshold}→观望"
@@ -280,19 +288,22 @@ class SignalClassifier:
     def _apply_direction_constraint(self, level: SignalLevel,
                                     material: ClassificationInput) -> Tuple[SignalLevel, str]:
         """
-        MA60空头区域不出看多信号，多头区域不出看空信号
+        MA60方向约束 — 多空区域与信号方向相反时直接降为观望
 
-        与原 filter.apply_hard_constraint 的区别:
-          - 原逻辑: 直接降观望
-          - 新逻辑: 压一档(强买入→买入→弱买入→观望)，更平滑
-          - 但方向性约束较强，违反方向仍直接降观望(保留原行为)
+        原逻辑恢复:
+          - 看多信号在MA60空头区域 → 直接降为观望(不买入)
+          - 看空信号在MA60多头区域 → 直接降为观望(不卖出)
+          - MA60为滞后指标, 方向相反时代表趋势不支撑, 应硬性过滤
         """
         ma60 = material.indicator_results.get("MA60")
         if ma60 is None:
             return level, ""
 
+        # 看多信号在MA60空头区域 → 直接降为观望
         if ma60.direction == -1 and level.is_bullish:
             return SignalLevel.NEUTRAL, "价格在MA60下方(空头区域)→观望"
+
+        # 看空信号在MA60多头区域 → 直接降为观望
         if ma60.direction == 1 and level.is_bearish:
             return SignalLevel.NEUTRAL, "价格在MA60上方(多头区域)→观望"
 

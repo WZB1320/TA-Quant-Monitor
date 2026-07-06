@@ -49,7 +49,8 @@ class BacktestEngine:
                  signal_engine: Optional[SignalEngine] = None,
                  broker: Optional[Broker] = None,
                  group_config: Optional[GroupConfig] = None,
-                 regime_detector: Optional[RegimeDetector] = None):
+                 regime_detector: Optional[RegimeDetector] = None,
+                 forced_regime: Optional[str] = None):
         """
         Args:
             initial_capital: 初始资金
@@ -65,6 +66,7 @@ class BacktestEngine:
             broker: 可选, 注入自定义撮合器 (测试用)
             group_config: 可选, 注入自定义分组配置 (测试用)
             regime_detector: 可选, 注入自定义体制检测器 (测试用)
+            forced_regime: 请求级 regime 覆盖, 不写盘 (None/"auto"/"trending"/"ranging")
         """
         self.initial_capital = initial_capital
         self.lookback_days = lookback_days
@@ -78,6 +80,7 @@ class BacktestEngine:
         self.signal_engine = signal_engine or SignalEngine(
             dedup_days=signal_dedup_days,
             group_config=self.group_config,
+            forced_regime=forced_regime,
         )
         self.broker = broker or Broker(
             commission_rate=commission_rate,

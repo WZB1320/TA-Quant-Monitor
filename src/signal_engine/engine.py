@@ -35,13 +35,24 @@ from src.signal_engine.classifier import (
 class SignalEngine:
     """信号引擎 — 多指标交叉验证 → 最终买卖信号"""
 
-    def __init__(self, dedup_days: int = 5, group_config=None):
+    def __init__(self, dedup_days: int = 5, group_config=None,
+                 forced_regime: Optional[str] = None):
+        """
+        Args:
+            dedup_days: 信号去重天数
+            group_config: GroupConfig 实例, 可选
+            forced_regime: 请求级 regime 覆盖, 不写盘, 不影响其他请求
+                None  → 不覆盖, 用 group_config.get_all_group_params 返回的 forced_regime (来自 user_preferences)
+                "auto" → 强制 auto (ADX 自动判断), 覆盖 user_preferences
+                "trending" / "ranging" → 强制该模式, 覆盖 user_preferences
+        """
         self.pipeline = IndicatorPipeline()
         self.scorer = Scorer()
         self.validator = Validator()       # 退化为共识计算器 (summarize)
         self.classifier = SignalClassifier()  # 唯一定级器 (v2 新增)
         self.filter = SignalFilter(dedup_days=dedup_days)
         self.group_config = group_config  # GroupConfig 实例, 可选
+        self.forced_regime = forced_regime  # 请求级 regime 覆盖
 
     def analyze(self, symbol: str, df: pd.DataFrame,
                 analysis_date: "date | None" = None) -> SignalResult:
@@ -68,6 +79,11 @@ class SignalEngine:
             strength_modifiers = group_params.get("strength_modifiers")
             regime_weights = group_params.get("regime_weights")
             forced_regime = group_params.get("forced_regime")
+
+        # 请求级 regime 覆盖: 路由层传入的 forced_regime 优先于 group_config (user_preferences)
+        # "auto" → None (强制 ADX 自动判断); "trending"/"ranging" → 该模式; None → 不覆盖
+        if self.forced_regime is not None:
+            forced_regime = None if self.forced_regime == "auto" else self.forced_regime
 
         # Step 1: 指标计算 (传入分组专属指标参数)
         indicator_results = self.pipeline.run(df, indicator_params=indicator_params)
