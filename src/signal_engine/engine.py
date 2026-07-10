@@ -30,13 +30,15 @@ from src.signal_engine.filter import SignalFilter
 from src.signal_engine.classifier import (
     SignalClassifier, ClassificationInput, ExecutionConstraint,
 )
+from src.memory import StrategyMemory, compute_strategy_version
 
 
 class SignalEngine:
     """信号引擎 — 多指标交叉验证 → 最终买卖信号"""
 
     def __init__(self, dedup_days: int = 5, group_config=None,
-                 forced_regime: Optional[str] = None):
+                 forced_regime: Optional[str] = None,
+                 memory: Optional[StrategyMemory] = None):
         """
         Args:
             dedup_days: 信号去重天数
@@ -45,6 +47,7 @@ class SignalEngine:
                 None  → 不覆盖, 用 group_config.get_all_group_params 返回的 forced_regime (来自 user_preferences)
                 "auto" → 强制 auto (ADX 自动判断), 覆盖 user_preferences
                 "trending" / "ranging" → 强制该模式, 覆盖 user_preferences
+            memory: 策略记忆层实例, 可选. 传入则记录 actionable 信号到 JSONL
         """
         self.pipeline = IndicatorPipeline()
         self.scorer = Scorer()
@@ -53,6 +56,7 @@ class SignalEngine:
         self.filter = SignalFilter(dedup_days=dedup_days)
         self.group_config = group_config  # GroupConfig 实例, 可选
         self.forced_regime = forced_regime  # 请求级 regime 覆盖
+        self.memory = memory  # 策略记忆层, 可选
 
     def analyze(self, symbol: str, df: pd.DataFrame,
                 analysis_date: "date | None" = None) -> SignalResult:
@@ -197,6 +201,14 @@ class SignalEngine:
                                              indicator_results, category_summary,
                                              cat_scores, blocked, block_reason)
 
+        # Step 12: 记录到策略记忆层 (仅 actionable 信号)
+        if self.memory is not None and level.is_actionable:
+            self._record_signal_memory(
+                symbol, df, analysis_date, group_params, forced_regime,
+                effective_params, indicator_results, score, cat_scores,
+                category_summary, level, execution, confidence,
+            )
+
         return SignalResult(
             symbol=symbol,
             level=level,
@@ -315,6 +327,85 @@ class SignalEngine:
         reason = f"{level.label} (得分{score:+.0f}, 置信度{confidence:.0%})"
         details = "\n".join(lines)
         return reason, details
+
+    # ── 策略记忆层记录 ──
+
+    def _record_signal_memory(self, symbol: str, df: pd.DataFrame,
+                              analysis_date, group_params: dict,
+                              forced_regime, effective_params: dict,
+                              indicator_results: dict, score: float,
+                              cat_scores: dict, category_summary: dict,
+                              level: SignalLevel,
+                              execution: ExecutionConstraint,
+                              confidence: float) -> None:
+        """构建信号记录并写入记忆层 (仅 actionable 信号调用)"""
+        # 参数快照 — 策略调整追踪的核心字段
+        params_snapshot = {
+            "indicator_params": group_params.get("indicator_params"),
+            "indicator_weights": group_params.get("indicator_weights"),
+            "regime_weights": group_params.get("regime_weights"),
+            "strength_modifiers": group_params.get("strength_modifiers"),
+            "forced_regime": forced_regime,
+            "execution_params": {
+                "cooldown_days": effective_params.get("cooldown_days"),
+                "max_consecutive_losses": effective_params.get("max_consecutive_losses"),
+                "consecutive_loss_suspend": effective_params.get("consecutive_loss_suspend"),
+                "score_threshold": effective_params.get("score_threshold"),
+                "score_ceiling": effective_params.get("score_ceiling"),
+            },
+        }
+
+        # 指标快照 — 决策驱动力归因
+        indicators = {}
+        for name, r in indicator_results.items():
+            if isinstance(r, IndicatorResult):
+                indicators[name] = {
+                    "dir": r.direction,
+                    "strength": round(r.strength, 2),
+                    "values": r.values,
+                }
+
+        # 类别共识
+        cat_consensus = {cat: cs.direction for cat, cs in category_summary.items()}
+
+        # 执行状态
+        executable = bool(execution.is_executable)
+        block_reason = None
+        if not executable:
+            if execution.in_cooldown:
+                block_reason = "cooldown"
+            elif execution.is_duplicate:
+                block_reason = "dedup"
+            elif execution.suspended:
+                block_reason = "suspended"
+            elif not execution.score_passes:
+                block_reason = "score_fail"
+
+        # 信号日收盘价
+        price_at_signal = None
+        if df is not None and not df.empty and "close" in df.columns:
+            price_at_signal = float(df.iloc[-1]["close"])
+
+        # 分组名 (从 group_config 获取, group_params 不含此字段)
+        group_name = self.group_config.get_group(symbol) if self.group_config else None
+
+        self.memory.record_signal({
+            "symbol": symbol,
+            "analysis_date": str(analysis_date) if analysis_date else None,
+            "group": group_name,
+            "regime": forced_regime or "auto",
+            "level": level.label,
+            "score": round(score, 2),
+            "confidence": round(confidence, 2),
+            "executable": executable,
+            "block_reason": block_reason,
+            "strategy_version": compute_strategy_version(params_snapshot),
+            "params_snapshot": params_snapshot,
+            "indicators": indicators,
+            "category_consensus": cat_consensus,
+            "cat_scores": {k: round(v, 2) for k, v in cat_scores.items()},
+            "price_at_signal": price_at_signal,
+        })
 
     @staticmethod
     def _score_bar(score: float, max_len: int = 15) -> str:

@@ -100,7 +100,7 @@ class SignalExecutor:
         exec_idx = self.calendar.locate(symbol, next_date)
         exec_atr = None
         if exec_idx is not None and exec_idx >= 60:
-            exec_df = df.iloc[:exec_idx + 1].copy()
+            exec_df = df.iloc[:exec_idx + 1]
             try:
                 exec_ind = self.signal_engine.pipeline.run(exec_df)
                 exec_ma60 = exec_ind.get("MA60")

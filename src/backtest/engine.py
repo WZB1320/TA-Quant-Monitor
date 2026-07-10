@@ -23,6 +23,7 @@ import pandas as pd
 from src.signal_engine import SignalEngine, SignalResult
 from src.signal_engine.filter import SignalFilter
 from src.config.group_config import GroupConfig
+from src.memory import StrategyMemory
 from .position import PositionManager
 from .broker import Broker
 from .metrics import compute_metrics, BacktestMetrics
@@ -50,7 +51,9 @@ class BacktestEngine:
                  broker: Optional[Broker] = None,
                  group_config: Optional[GroupConfig] = None,
                  regime_detector: Optional[RegimeDetector] = None,
-                 forced_regime: Optional[str] = None):
+                 forced_regime: Optional[str] = None,
+                 memory: Optional[StrategyMemory] = None,
+                 benchmark_df_for_memory: Optional[pd.DataFrame] = None):
         """
         Args:
             initial_capital: 初始资金
@@ -67,6 +70,10 @@ class BacktestEngine:
             group_config: 可选, 注入自定义分组配置 (测试用)
             regime_detector: 可选, 注入自定义体制检测器 (测试用)
             forced_regime: 请求级 regime 覆盖, 不写盘 (None/"auto"/"trending"/"ranging")
+            memory: 可选, 策略记忆层实例. None 则自动创建 (source="backtest")
+            benchmark_df_for_memory: 可选, 仅用于 OutcomeRecord 记录基准收益,
+                不影响交易逻辑 (MarketFilter 用的是 run() 的 benchmark_df 参数).
+                路由层拉取后传入, 避免 engine 内部重复拉取.
         """
         self.initial_capital = initial_capital
         self.lookback_days = lookback_days
@@ -77,11 +84,18 @@ class BacktestEngine:
 
         # 依赖注入: 优先用外部传入, 否则内部创建
         self.group_config = group_config or GroupConfig()
+        self.memory = memory or StrategyMemory(source="backtest")
+        # benchmark 数据仅用于记忆层记录超额收益, 不参与交易决策
+        self._benchmark_df_for_memory = benchmark_df_for_memory
         self.signal_engine = signal_engine or SignalEngine(
             dedup_days=signal_dedup_days,
             group_config=self.group_config,
             forced_regime=forced_regime,
+            memory=self.memory,
         )
+        # 确保注入的 signal_engine 也持有记忆层 (测试场景)
+        if self.signal_engine.memory is None:
+            self.signal_engine.memory = self.memory
         self.broker = broker or Broker(
             commission_rate=commission_rate,
             stamp_tax=stamp_tax,
@@ -151,10 +165,14 @@ class BacktestEngine:
         values = {}
         pending_signals: Dict = {}
 
+        # 策略记忆层: 入场信号元数据 (用于 outcome 关联) + 已记录交易计数
+        self._entry_signal_meta: Dict[str, dict] = {}
+        self._last_recorded_trade_count = 0
+
         for i, today in enumerate(all_dates):
-            # 跳过回测结束日之后的日子
+            # 回测结束日之后的日子无需处理, 直接跳出
             if bt_end and today > bt_end:
-                continue
+                break
 
             # 0. 每日更新市场体制 → 仓位管理器自适应
             regime = self.regime_detector.detect(benchmark_df, today, calendar=None)
@@ -176,12 +194,27 @@ class BacktestEngine:
                         else:
                             self.signal_engine.filter.record_loss(symbol, today)
 
+            # 记录止损/止盈平仓的 outcome
+            self._record_new_outcomes(today, regime)
+
             # 2. T+1 执行: 取出昨天暂存的信号, 以今天开盘价执行
             if i > 0:
                 prev_date = all_dates[i - 1]
                 prev_signals = pending_signals.pop(prev_date, {})
                 if prev_signals:
+                    positions_before = set(self.position_mgr.open_positions.keys())
                     executor.execute(prev_signals, data_map, prev_date)
+                    # 记录新开仓信号元数据 (用于 outcome 关联)
+                    for symbol, result in prev_signals.items():
+                        if (symbol in self.position_mgr.open_positions
+                                and symbol not in positions_before):
+                            self._entry_signal_meta[symbol] = {
+                                "analysis_date": prev_date,
+                                "level": result.level.label,
+                                "score": result.score,
+                            }
+                    # 记录信号平仓的 outcome
+                    self._record_new_outcomes(today, regime)
 
             # 3. 对每只股票, 判断今日是否可计算信号
             #    仅在回测区间内产生新信号, 之前的日子只用于指标预热
@@ -194,7 +227,7 @@ class BacktestEngine:
                     if idx is None or idx < self.lookback_days:
                         continue
 
-                    df_slice = df.iloc[:idx + 1].copy()
+                    df_slice = df.iloc[:idx + 1]
 
                     try:
                         result = self.signal_engine.analyze(symbol, df_slice,
@@ -223,6 +256,9 @@ class BacktestEngine:
                 last_bt_date = valid_dates[-1] if valid_dates else all_dates[-1]
             else:
                 last_bt_date = all_dates[-1]
+            # 记录 flush 阶段平仓的 outcome
+            last_regime = self.regime_detector.detect(benchmark_df, last_bt_date, calendar=None)
+            self._record_new_outcomes(last_bt_date, last_regime)
             prices_last = calendar.get_closing_prices(data_map, last_bt_date)
             values[last_bt_date] = self.position_mgr.total_value(prices_last)
 
@@ -252,7 +288,7 @@ class BacktestEngine:
         idx = calendar.locate(symbol, today)
         if idx is None or idx < self.lookback_days:
             return None
-        df_slice = df.iloc[:idx + 1].copy()
+        df_slice = df.iloc[:idx + 1]
         try:
             indicator_results = self.signal_engine.pipeline.run(df_slice)
             from src.signal_engine.scorer import Scorer
@@ -282,3 +318,81 @@ class BacktestEngine:
         if len(bench_series) > 0:
             bench_series = bench_series / bench_series.iloc[0]
         return bench_series
+
+    # ── 策略记忆层: 结果记录 ──
+
+    _EXIT_REASON_MAP = [
+        ("ATR硬止损", "atr_hard_stop"),
+        ("ATR移动止盈", "atr_trailing"),
+        ("安全网", "safety_net"),
+    ]
+
+    def _record_new_outcomes(self, today, regime: str) -> None:
+        """记录自上次调用以来新平仓的交易结果到记忆层
+
+        在止损检查后、信号执行后、flush 后各调用一次,
+        通过对比 closed_trades 增量捕获所有平仓路径.
+
+        benchmark_5d_return 使用 self._benchmark_df_for_memory 计算,
+        与 run() 的 benchmark_df 参数完全解耦 (不影响交易逻辑).
+        """
+        new_trades = self.position_mgr.closed_trades[self._last_recorded_trade_count:]
+        self._last_recorded_trade_count = len(self.position_mgr.closed_trades)
+
+        for trade in new_trades:
+            meta = self._entry_signal_meta.pop(trade.symbol, {})
+            analysis_date = meta.get("analysis_date")
+            signal_level = meta.get("level")
+            signal_score = meta.get("score")
+
+            self.memory.record_outcome({
+                "signal_ref": {
+                    "symbol": trade.symbol,
+                    "analysis_date": str(analysis_date) if analysis_date else None,
+                    "run_id": self.memory.run_id,
+                },
+                "signal_level_at_entry": signal_level,
+                "signal_score_at_entry": round(signal_score, 2) if signal_score is not None else None,
+                "symbol": trade.symbol,
+                "entry_date": str(trade.entry_date) if trade.entry_date else None,
+                "entry_price": round(trade.entry_price, 4) if trade.entry_price else None,
+                "exit_date": str(trade.exit_date) if trade.exit_date else None,
+                "exit_price": round(trade.exit_price, 4) if trade.exit_price else None,
+                "shares": trade.shares,
+                "pnl": round(trade.pnl, 2),
+                "pnl_pct": round(trade.pnl_pct, 4),
+                "holding_days": trade.holding_days,
+                "commission_total": round(trade.commission, 2),
+                "exit_reason": self._categorize_exit_reason(trade.exit_signal),
+                "exit_reason_detail": trade.exit_signal,
+                "market_context_exit": {
+                    "regime_at_exit": regime,
+                    "benchmark_5d_return": self._benchmark_5d_return(
+                        self._benchmark_df_for_memory, today),
+                },
+            })
+
+    def _categorize_exit_reason(self, exit_signal: str) -> str:
+        """将退出信号文本映射为类别标签"""
+        for keyword, category in self._EXIT_REASON_MAP:
+            if keyword in exit_signal:
+                return category
+        if "score=" in exit_signal:
+            return "signal_exit"
+        return "other"
+
+    def _benchmark_5d_return(self, benchmark_df, today) -> Optional[float]:
+        """计算基准指数近 5 日涨幅 (无基准数据时返回 None)"""
+        if benchmark_df is None or benchmark_df.empty:
+            return None
+        try:
+            if "date" not in benchmark_df.columns or "close" not in benchmark_df.columns:
+                return None
+            bench = benchmark_df.copy()
+            bench["date"] = pd.to_datetime(bench["date"]).dt.date
+            recent = bench.loc[bench["date"] <= today].tail(6)
+            if len(recent) < 2:
+                return None
+            return round((recent["close"].iloc[-1] / recent["close"].iloc[0]) - 1.0, 4)
+        except Exception:
+            return None
