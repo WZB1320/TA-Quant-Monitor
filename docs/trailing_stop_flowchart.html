@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATR 移动止盈触发逻辑流程图</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #7d8590;
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.08);
+    --green-border: rgba(63, 185, 80, 0.3);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.08);
+    --red-border: rgba(248, 81, 73, 0.3);
+    --yellow: #d29922;
+    --yellow-bg: rgba(210, 153, 34, 0.08);
+    --yellow-border: rgba(210, 153, 34, 0.3);
+    --blue: #58a6ff;
+    --blue-bg: rgba(88, 166, 255, 0.08);
+    --blue-border: rgba(88, 166, 255, 0.3);
+    --purple: #bc8cff;
+    --purple-bg: rgba(188, 140, 255, 0.08);
+    --purple-border: rgba(188, 140, 255, 0.3);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 20px;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ── 头部 ── */
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .header h1 .accent { color: var(--blue); }
+  .header .subtitle {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .header .params {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .param-chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .param-chip .v { color: var(--text); font-weight: 500; }
+
+  /* ── 流程图区域 ── */
+  .flowchart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    position: relative;
+  }
+
+  .node {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 24px;
+    background: var(--surface);
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    transition: all 0.3s;
+    min-width: 340px;
+  }
+  .node:hover {
+    border-color: var(--text-dim);
+    transform: translateY(-1px);
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .node-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .node-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    margin-top: 8px;
+    color: var(--text-dim);
+    background: rgba(0,0,0,0.2);
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+
+  /* ── 连接线 ── */
+  .connector {
+    width: 2px;
+    height: 24px;
+    background: var(--border);
+    position: relative;
+  }
+  .connector::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--border);
+  }
+
+  /* ── 分支节点 ── */
+  .branch-label {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-dim);
+    padding: 2px 10px;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    z-index: 2;
+    position: relative;
+  }
+
+  /* ── 横向三档分支 ── */
+  .branches {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 0;
+  }
+
+  .branch-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: 300px;
+  }
+
+  .branch-card {
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .branch-card .tier {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    opacity: 0.8;
+  }
+  .branch-card .profit-range {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .branch-card .mult {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .branch-card .dist {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .branch-card .desc {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-top: 6px;
+  }
+
+  .tier-green {
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+  }
+  .tier-green .tier, .tier-green .profit-range { color: var(--green); }
+
+  .tier-yellow {
+    background: var(--yellow-bg);
+    border: 1px solid var(--yellow-border);
+  }
+  .tier-yellow .tier, .tier-yellow .profit-range { color: var(--yellow); }
+
+  .tier-red {
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+  }
+  .tier-red .tier, .tier-red .profit-range { color: var(--red); }
+
+  /* ── 连接横线 ── */
+  .branch-fan-out {
+    width: 100%;
+    height: 40px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+  }
+  .branch-fan-out .h-line {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    height: 2px;
+    background: var(--border);
+  }
+  .branch-fan-out .v-line {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 24px;
+    background: var(--border);
+  }
+  .branch-fan-out .v-line::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--border);
+  }
+
+  /* ── 两条汇聚到触发判断 ── */
+  .merge-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    position: relative;
+    height: 40px;
+  }
+
+  /* ── 触发判断节点 ── */
+  .trigger-check {
+    border: 2px solid var(--purple-border);
+    background: var(--purple-bg);
+    border-radius: 10px;
+    padding: 16px 28px;
+    text-align: center;
+    min-width: 420px;
+    position: relative;
+    z-index: 1;
+  }
+  .trigger-check .icon {
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .trigger-check .title {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--purple);
+    margin-bottom: 4px;
+  }
+  .trigger-check .formula {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--text);
+    margin-top: 8px;
+  }
+  .trigger-check .formula .var { color: var(--purple); }
+
+  /* ── 结果节点 ── */
+  .result-node {
+    border: 2px solid var(--red-border);
+    background: var(--red-bg);
+    border-radius: 10px;
+    padding: 16px 32px;
+    text-align: center;
+    min-width: 380px;
+  }
+  .result-node .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--red);
+    margin-bottom: 8px;
+  }
+  .result-node .title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .result-node .detail {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .continue-node {
+    border: 1px solid var(--green-border);
+    background: var(--green-bg);
+    border-radius: 10px;
+    padding: 14px 28px;
+    text-align: center;
+    min-width: 260px;
+  }
+  .continue-node .label {
+    font-size: 14px;
+    color: var(--green);
+    font-weight: 500;
+  }
+  .continue-node .desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── 安全网 ── */
+  .safety-net {
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 12px 24px;
+    background: rgba(0,0,0,0.15);
+    text-align: center;
+    min-width: 340px;
+  }
+  .safety-net .title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .safety-net .desc {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* ── 模拟示例 ── */
+  .simulation {
+    margin-top: 48px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+  }
+  .simulation h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+  .simulation h2 .accent { color: var(--blue); }
+  .simulation .sim-sub {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+  }
+
+  .sim-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .sim-table th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .sim-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .sim-table tr.trigger-row {
+    background: var(--red-bg);
+  }
+  .sim-table tr.trigger-row td {
+    border-bottom: 1px solid var(--red-border);
+  }
+  .sim-table .tier-tag {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .tag-green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .tag-yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
+  .tag-red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+  .tag-trigger { background: var(--red); color: #fff; }
+
+  /* ── 脚注 ── */
+  .footer-note {
+    margin-top: 32px;
+    padding: 16px 20px;
+    background: var(--blue-bg);
+    border: 1px solid var(--blue-border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .footer-note strong { color: var(--blue); }
+  .footer-note code {
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(0,0,0,0.3);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- 头部 -->
+  <div class="header">
+    <h1>ATR <span class="accent">移动止盈</span> 触发逻辑流程图</h1>
+    <div class="subtitle">基于 position.py check_stop_loss() 方法 · 盈利自适应三档倍率</div>
+    <div class="params">
+      <div class="param-chip">入场价: <span class="v">5.00</span></div>
+      <div class="param-chip">分组: <span class="v">科技成长型</span></div>
+      <div class="param-chip">atr_stop_mult: <span class="v">2.0</span></div>
+      <div class="param-chip">ATR(入场锁定): <span class="v">0.40</span></div>
+    </div>
+  </div>
+
+  <!-- 流程图 -->
+  <div class="flowchart">
+
+    <!-- 起点 -->
+    <div class="node">
+      <div class="node-title">每日收盘价检查</div>
+      <div class="node-desc">check_stop_loss(current_price)<br>每日以收盘价检查止损/止盈</div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- 安全网 -->
+    <div class="safety-net">
+      <div class="title">安全网硬止损 (永远优先检查)</div>
+      <div class="desc">current_price ≤ entry_price × 0.90 → 即 ≤ <strong style="color:var(--red)">4.50</strong> 元直接平仓</div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- 更新最高价 -->
+    <div class="node">
+      <div class="node-title">更新持仓最高价</div>
+      <div class="node-desc">
+        if current_price > highest_price:<br>
+        &nbsp;&nbsp;highest_price = current_price
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- 计算盈利 -->
+    <div class="node">
+      <div class="node-title">计算当前盈利比例</div>
+      <div class="node-desc">
+        <span class="node-code">profit_pct = (current_price - entry_price) / entry_price</span>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- 分支标签 -->
+    <div class="branch-label">根据 profit_pct 选择档位</div>
+
+    <!-- 横线分叉 -->
+    <div class="branch-fan-out" style="height: 36px;">
+      <div class="h-line" style="width: 660px; top: 0;"></div>
+      <div class="v-line" style="left: calc(50% - 330px); top: 0;"></div>
+      <div class="v-line" style="left: 50%; top: 0;"></div>
+      <div class="v-line" style="left: calc(50% + 330px); top: 0;"></div>
+    </div>
+
+    <!-- 三档分支 -->
+    <div class="branches">
+      <!-- 档位1: 盈利<10% -->
+      <div class="branch-column">
+        <div class="branch-card tier-green">
+          <div class="tier">TIER 1 · 给足空间</div>
+          <div class="profit-range">盈利 &lt; 10%</div>
+          <div class="mult">trailing_mult = 2.0 × <strong>1.0</strong></div>
+          <div class="dist">trailing_dist = 0.80 元</div>
+          <div class="desc">让利润奔跑，不轻易被震出</div>
+        </div>
+      </div>
+
+      <!-- 档位2: 盈利10~20% -->
+      <div class="branch-column">
+        <div class="branch-card tier-yellow">
+          <div class="tier">TIER 2 · 适度收紧</div>
+          <div class="profit-range">10% ~ 20%</div>
+          <div class="mult">trailing_mult = 2.0 × <strong>0.8</strong></div>
+          <div class="dist">trailing_dist = 0.64 元</div>
+          <div class="desc">已有一定利润，收紧保护</div>
+        </div>
+      </div>
+
+      <!-- 档位3: 盈利>20% -->
+      <div class="branch-column">
+        <div class="branch-card tier-red">
+          <div class="tier">TIER 3 · 锁定利润</div>
+          <div class="profit-range">盈利 &gt; 20%</div>
+          <div class="mult">trailing_mult = 2.0 × <strong>0.6</strong></div>
+          <div class="dist">trailing_dist = 0.48 元</div>
+          <div class="desc">大盈利后，小回撤即离场</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 汇聚横线 -->
+    <div class="branch-fan-out" style="height: 36px;">
+      <div class="h-line" style="width: 660px; top: 0;"></div>
+      <div class="v-line" style="left: calc(50% - 330px); top: 0; height: 12px;"></div>
+      <div class="v-line" style="left: 50%; top: 0; height: 12px;"></div>
+      <div class="v-line" style="left: calc(50% + 330px); top: 0; height: 12px;"></div>
+    </div>
+
+    <!-- 触发判断 -->
+    <div class="trigger-check">
+      <div class="title">移动止盈触发判断</div>
+      <div class="formula">
+        if <span class="var">current_price</span> ≤ <span class="var">highest_price</span> - <span class="var">trailing_dist</span>
+      </div>
+      <div class="node-desc" style="margin-top: 8px; font-size: 12px;">当前价格从最高点回撤超过 trailing_dist → 触发平仓</div>
+    </div>
+
+    <!-- 分支: 是/否 -->
+    <div style="display: flex; gap: 80px; margin-top: 0; align-items: flex-start; justify-content: center; width: 100%; position: relative;">
+      <!-- 否 -->
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 0; flex: 1; max-width: 300px;">
+        <div class="branch-label" style="margin-bottom: 0;">否: current_price &gt; 触发线</div>
+        <div class="connector"></div>
+        <div class="continue-node">
+          <div class="label">继续持有</div>
+          <div class="desc">等待下一日检查</div>
+        </div>
+      </div>
+      <!-- 是 -->
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 0; flex: 1; max-width: 420px;">
+        <div class="branch-label" style="margin-bottom: 0; border-color: var(--red-border); color: var(--red);">是: current_price ≤ 触发线</div>
+        <div class="connector" style="background: var(--red-border);"></div>
+        <div class="result-node">
+          <div class="label">TRIGGERED</div>
+          <div class="title">触发平仓 · ATR 移动止盈</div>
+          <div class="detail">
+            exit_price = current_price<br>
+            记录: 最高{highest} · 回撤{drawdown}% · 盈利{profit}%
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模拟示例表格 -->
+  <div class="simulation">
+    <h2><span class="accent">模拟示例</span> · 入场5.0 → 最高7.0 → 回调</h2>
+    <div class="sim-sub">假设 ATR=0.40（入场时锁定）, atr_stop_mult=2.0, 科技成长型分组</div>
+    <table class="sim-table">
+      <thead>
+        <tr>
+          <th>阶段</th>
+          <th>价格</th>
+          <th>盈利</th>
+          <th>当前档位</th>
+          <th>trailing_dist</th>
+          <th>最高价</th>
+          <th>触发线 (最高-dist)</th>
+          <th>是否触发</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>入场</td>
+          <td>5.00</td>
+          <td>0%</td>
+          <td><span class="tier-tag tag-green">T1 &lt;10%</span></td>
+          <td>0.80</td>
+          <td>5.00</td>
+          <td>4.20</td>
+          <td style="color: var(--green)">否</td>
+        </tr>
+        <tr>
+          <td>小涨</td>
+          <td>5.30</td>
+          <td>+6%</td>
+          <td><span class="tier-tag tag-green">T1 &lt;10%</span></td>
+          <td>0.80</td>
+          <td>5.30</td>
+          <td>4.50</td>
+          <td style="color: var(--green)">否</td>
+        </tr>
+        <tr>
+          <td>突破10%</td>
+          <td>5.50</td>
+          <td>+10%</td>
+          <td><span class="tier-tag tag-yellow">T2 10~20%</span></td>
+          <td>0.64</td>
+          <td>5.50</td>
+          <td>4.86</td>
+          <td style="color: var(--green)">否</td>
+        </tr>
+        <tr>
+          <td>继续涨</td>
+          <td>5.80</td>
+          <td>+16%</td>
+          <td><span class="tier-tag tag-yellow">T2 10~20%</span></td>
+          <td>0.64</td>
+          <td>5.80</td>
+          <td>5.16</td>
+          <td style="color: var(--green)">否</td>
+        </tr>
+        <tr>
+          <td>突破20%</td>
+          <td>6.00</td>
+          <td>+20%</td>
+          <td><span class="tier-tag tag-red">T3 &gt;20%</span></td>
+          <td>0.48</td>
+          <td>6.00</td>
+          <td>5.52</td>
+          <td style="color: var(--green)">否</td>
+        </tr>
+        <tr>
+          <td>加速涨</td>
+          <td>6.50</td>
+          <td>+30%</td>
+          <td><span class="tier-tag tag-red">T3 &gt;20%</span></td>
+          <td>0.48</td>
+          <td>6.50</td>
+          <td>6.02</td>
+          <td style="color: var(--green)">否</td>
+        </tr>
+        <tr>
+          <td style="color: var(--blue)">见顶</td>
+          <td style="color: var(--blue); font-weight: 700;">7.00</td>
+          <td>+40%</td>
+          <td><span class="tier-tag tag-red">T3 &gt;20%</span></td>
+          <td>0.48</td>
+          <td style="color: var(--blue)">7.00</td>
+          <td style="color: var(--blue)">6.52</td>
+          <td style="color: var(--green)">否</td>
+        </tr>
+        <tr>
+          <td>回调D1</td>
+          <td>6.80</td>
+          <td>+36%</td>
+          <td><span class="tier-tag tag-red">T3 &gt;20%</span></td>
+          <td>0.48</td>
+          <td>7.00</td>
+          <td>6.52</td>
+          <td style="color: var(--green)">否 (6.80&gt;6.52)</td>
+        </tr>
+        <tr>
+          <td>回调D2</td>
+          <td>6.60</td>
+          <td>+32%</td>
+          <td><span class="tier-tag tag-red">T3 &gt;20%</span></td>
+          <td>0.48</td>
+          <td>7.00</td>
+          <td>6.52</td>
+          <td style="color: var(--green)">否 (6.60&gt;6.52)</td>
+        </tr>
+        <tr class="trigger-row">
+          <td style="color: var(--red); font-weight: 700;">触发平仓</td>
+          <td style="color: var(--red); font-weight: 700;">6.50</td>
+          <td style="color: var(--red);">+30%</td>
+          <td><span class="tier-tag tag-trigger">T3 &gt;20%</span></td>
+          <td>0.48</td>
+          <td>7.00</td>
+          <td style="color: var(--red)">6.52</td>
+          <td><span class="tier-tag tag-trigger">触发! 6.50≤6.52</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 脚注 -->
+  <div class="footer-note">
+    <strong>关键结论</strong><br>
+    • 盈利越多，移动止盈倍率越紧：<code>2.0×ATR</code> → <code>1.6×ATR</code> → <code>1.2×ATR</code><br>
+    • 在 T3 档位（盈利&gt;20%）下，从最高点仅需回撤 <code>0.48元</code>（约 <strong>7%</strong>）即触发平仓<br>
+    • 一次 <strong>15%</strong> 的回调根本走不完 —— 在回撤 <strong>7%</strong> 时已被平仓<br>
+    • 安全网硬止损（<code>-10%</code>）永远优先检查，是最后的保本底线<br>
+    • ATR 值在入场时锁定，后续不再更新（见 <code>position.py L238-241</code>）
+  </div>
+
+</div>
+</body>
+</html>
