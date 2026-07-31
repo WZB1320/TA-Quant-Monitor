@@ -33,4 +33,3 @@ dist-ssr/
 # Env
 .env
 .env.local
-web
