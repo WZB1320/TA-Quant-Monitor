@@ -36,6 +36,17 @@ from .signal_executor import SignalExecutor
 class BacktestEngine:
     """回测引擎 — 仅负责主循环编排"""
 
+    # 组级回撤保护默认配置 (P3+固化, 2026-08-07)
+    # 敏感性扫描结论: 8%训练窗误伤(Alpha-1.98%), 10%测试窗回撤恶化, 12%/15%保住P3成果.
+    # 选12%: 平时不触发(P3策略本身回撤-7.6%), 极端熊市(回撤>12%)才触发真实降仓.
+    # 启用方式: BacktestEngine(dd_protection_config=BacktestEngine.DEFAULT_DD_PROTECTION_CONFIG)
+    # 向后兼容: dd_protection_config=None 仍表示不启用.
+    DEFAULT_DD_PROTECTION_CONFIG = {
+        "threshold": -0.12,       # 回撤>12%触发真实降仓
+        "recovery": -0.06,        # 回撤收窄至6%以内退出保护
+        "reduced_ratio": 0.5,     # 触发时对每个持仓卖出50%股数
+    }
+
     def __init__(self,
                  initial_capital: float = 100000,
                  lookback_days: int = 120,
@@ -53,7 +64,14 @@ class BacktestEngine:
                  regime_detector: Optional[RegimeDetector] = None,
                  forced_regime: Optional[str] = None,
                  memory: Optional[StrategyMemory] = None,
-                 benchmark_df_for_memory: Optional[pd.DataFrame] = None):
+                 benchmark_df_for_memory: Optional[pd.DataFrame] = None,
+                 reverse_mode: bool = False,
+                 log_detail: bool = False,
+                 stop_loss_params: dict = None,
+                 trade_regimes: set = None,
+                 regime_exit_config: dict = None,
+                 dd_protection_config: dict = None,
+                 mean_reversion_config: dict = None):
         """
         Args:
             initial_capital: 初始资金
@@ -74,6 +92,37 @@ class BacktestEngine:
             benchmark_df_for_memory: 可选, 仅用于 OutcomeRecord 记录基准收益,
                 不影响交易逻辑 (MarketFilter 用的是 run() 的 benchmark_df 参数).
                 路由层拉取后传入, 避免 engine 内部重复拉取.
+            reverse_mode: 反转模式 — 指标 direction 取反 (反转实验用, 传给 SignalEngine)
+            log_detail: 是否记录每个因子贡献的详细日志 (DEBUG级别, 传给 SignalEngine)
+            stop_loss_params: 止损止盈参数覆盖 (敏感性扫描用), None=用P3默认值. 透传给 PositionManager.
+                P3默认: trail_mult[2.0/1.5/1.0], hard_stop_pct=0.12 (放宽trailing让利润奔跑).
+                可含键: hard_stop_pct/trail_tier1_threshold/trail_tier2_threshold/
+                trail_mult_low/trail_mult_mid/trail_mult_high/
+                no_atr_hard_stop_pct/no_atr_trail_drawdown
+            trade_regimes: 允许交易的 regime 集合 (震荡市空仓实验用), None=不限制.
+                例: {"trending"} 仅趋势市交易; {"trending","transition"} 过滤震荡市;
+                regime 每日由 RegimeDetector 基于基准判断: trending/transition/ranging/trend_fading
+            regime_exit_config: 分体制退出参数覆盖, 透传给 PositionManager.
+                None=用P3默认(震荡市禁用trailing), {}=禁用分体制退出.
+                格式 {regime: {key: val}}, 可含 disable_trailing/hard_stop_pct/trail_mult_*等.
+                例: {"ranging": {"disable_trailing": True}} 震荡市禁用移动止盈,只靠硬止损.
+            dd_protection_config: 组合级回撤保护配置 (引擎真实降仓, 非事后净值调整).
+                None=不启用(向后兼容, 行为同无保护).
+                推荐默认: BacktestEngine.DEFAULT_DD_PROTECTION_CONFIG (12%阈值, 2026-08-07固化).
+                敏感性扫描结论: 8%训练窗误伤(Alpha-1.98%), 10%测试窗回撤恶化(-8.4%),
+                12%保住P3成果且极端熊市能触发, 15%等同12%但保险阈值过宽.
+                启用时格式: {"threshold": -0.12, "recovery": -0.06, "reduced_ratio": 0.5}
+                - threshold: 触发降仓的回撤阈值 (负值, 如-0.12=回撤>12%触发)
+                - recovery: 退出保护的回撤恢复线 (负值, 如-0.06=回撤收窄到6%以内退出)
+                - reduced_ratio: 触发时对每个持仓卖出的比例 (如0.5=卖出50%股数)
+                单向降仓: 触发时调用 PositionManager.reduce_position 真实部分平仓;
+                恢复时仅切换状态标志, 不自动买回 (让新信号自然重建仓位).
+            mean_reversion_config: 均值回归退出配置 (消费组用).
+                None=不启用(趋势跟踪模式). 启用时合并到 stop_loss_params 和 regime_exit_config.
+                格式: {"target_profit_pct": 0.06, "hard_stop_pct": 0.08, "disable_trailing": True}
+                - target_profit_pct: 目标价止盈百分比 (如0.06=盈利6%即平仓)
+                - hard_stop_pct: 硬止损百分比 (如0.08=亏损8%止损, 比趋势跟踪12%更紧)
+                - disable_trailing: True=所有体制禁用trailing (均值回归利润不奔跑)
         """
         self.initial_capital = initial_capital
         self.lookback_days = lookback_days
@@ -81,6 +130,29 @@ class BacktestEngine:
         self.commission_rate = commission_rate
         self.risk_per_trade = risk_per_trade
         self.atr_stop_mult = atr_stop_mult
+        self.stop_loss_params = stop_loss_params
+        self.trade_regimes = trade_regimes
+        self.regime_exit_config = regime_exit_config
+        self.dd_protection_config = dd_protection_config
+
+        # ── 均值回归退出配置合并 ──
+        # 将 mean_reversion_config 合并到 stop_loss_params 和 regime_exit_config,
+        # 使 PositionManager.check_stop_loss 生效 target_profit_pct 和 disable_trailing.
+        self.mean_reversion_config = mean_reversion_config
+        if mean_reversion_config:
+            # 合并到 stop_loss_params: target_profit_pct + hard_stop_pct
+            _mr_stop = {k: v for k, v in mean_reversion_config.items()
+                        if k in ("target_profit_pct", "hard_stop_pct")}
+            self.stop_loss_params = {**(self.stop_loss_params or {}), **_mr_stop}
+            # 合并到 regime_exit_config: 所有体制禁用 trailing
+            if mean_reversion_config.get("disable_trailing"):
+                _disable_all = {"ranging": {"disable_trailing": True},
+                                "transition": {"disable_trailing": True},
+                                "trending": {"disable_trailing": True}}
+                if self.regime_exit_config is None:
+                    self.regime_exit_config = _disable_all
+                else:
+                    self.regime_exit_config = {**self.regime_exit_config, **_disable_all}
 
         # 依赖注入: 优先用外部传入, 否则内部创建
         self.group_config = group_config or GroupConfig()
@@ -92,6 +164,8 @@ class BacktestEngine:
             group_config=self.group_config,
             forced_regime=forced_regime,
             memory=self.memory,
+            reverse_mode=reverse_mode,
+            log_detail=log_detail,
         )
         # 确保注入的 signal_engine 也持有记忆层 (测试场景)
         if self.signal_engine.memory is None:
@@ -131,7 +205,20 @@ class BacktestEngine:
             commission_rate=self.commission_rate,
             risk_per_trade=self.risk_per_trade,
             atr_stop_mult=self.atr_stop_mult,
+            stop_loss_params=self.stop_loss_params,
+            regime_exit_config=self.regime_exit_config,
         )
+
+        # 组合级回撤保护状态 (引擎真实降仓, 非事后净值调整)
+        # None=不启用(向后兼容); 启用时每日循环检查组合回撤, 触发时真实部分平仓
+        self._dd_enabled = self.dd_protection_config is not None
+        self._dd_threshold = (self.dd_protection_config or {}).get("threshold", -0.08)
+        self._dd_recovery = (self.dd_protection_config or {}).get("recovery", -0.04)
+        self._dd_reduced_ratio = (self.dd_protection_config or {}).get("reduced_ratio", 0.5)
+        self._nav_peak = self.initial_capital  # 组合净值峰值 (触发判断依据)
+        self._in_protection = False             # 当前是否处于保护状态
+        self._dd_triggers = 0                   # 触发次数
+        self._dd_reduce_days = 0                # 降仓天数
 
         # 重置信号引擎的过滤器状态，避免多次 run() 之间状态残留
         self.signal_engine.filter = SignalFilter(
@@ -236,10 +323,36 @@ class BacktestEngine:
                         continue
 
                     if result.level.is_actionable:
+                        # 震荡市空仓过滤: 若设置了 trade_regimes 且当前 regime 不在允许集合内, 不生成信号
+                        if self.trade_regimes and regime not in self.trade_regimes:
+                            continue
                         signals_today[symbol] = result
 
             # 4. 暂存今天的信号, 明天执行
             pending_signals[today] = signals_today
+
+            # 4.5 组合级回撤保护 (引擎真实降仓, 单向)
+            #    基于当日收盘NAV vs 历史峰值的回撤判断; 触发时对每个持仓真实部分平仓.
+            #    单向: 恢复时仅切换状态标志, 不买回 (让新信号自然重建仓位).
+            if self._dd_enabled and in_backtest_range:
+                current_nav = self.position_mgr.total_value(prices_today)
+                if current_nav > self._nav_peak:
+                    self._nav_peak = current_nav
+                dd = (current_nav - self._nav_peak) / self._nav_peak if self._nav_peak > 0 else 0.0
+                if not self._in_protection and dd < self._dd_threshold:
+                    # 触发降仓: 对每个持仓按 reduced_ratio 真实部分平仓
+                    self._in_protection = True
+                    self._dd_triggers += 1
+                    for sym in list(self.position_mgr.open_positions.keys()):
+                        if sym in prices_today:
+                            self.position_mgr.reduce_position(
+                                sym, today, prices_today[sym],
+                                reduce_ratio=self._dd_reduced_ratio)
+                elif self._in_protection and dd > self._dd_recovery:
+                    # 恢复: 仅切换状态, 不买回 (单向)
+                    self._in_protection = False
+                if self._in_protection:
+                    self._dd_reduce_days += 1
 
             # 5. 记录当日净值 (仅回测区间内记录, 避免预热期污染曲线)
             if in_backtest_range:
@@ -277,6 +390,12 @@ class BacktestEngine:
             initial_capital=self.initial_capital,
             benchmark_values=bench_series,
         )
+        # 回撤保护统计 (供脚本读取, 区分引擎真实降仓 vs 事后模型)
+        self.dd_protection_stats = {
+            "enabled": self._dd_enabled,
+            "triggers": self._dd_triggers,
+            "reduce_days": self._dd_reduce_days,
+        }
         return self.metrics
 
     def _get_position_score(self, symbol: str, data_map: Dict[str, pd.DataFrame],

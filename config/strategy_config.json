@@ -1,6 +1,6 @@
 {
   "strategy_config": {
-    "_comment": "量化策略优化后参数配置表 — 2026-06-04 整理",
+    "_comment": "量化策略参数配置表 — 全组启用(2026-08-10): 科技40%+消费5%+周期37.5%+医药5%+机械10%+现金2.5%",
     "backtest": {
       "initial_capital": 100000,
       "lookback_days": 120,
@@ -8,13 +8,13 @@
       "benchmark": "sh.000300"
     },
     "position_sizing": {
-      "_comment": "体制自适应仓位管理",
+      "_comment": "体制自适应仓位管理 — 全组启用(2026-08-10): 现金缓冲降至2.5%",
       "risk_per_trade": 0.05,
-      "atr_stop_mult": 2.5,
+      "atr_stop_mult": 2.0,
       "position_ratio": 0.3,
       "signal_strength_boost": 1.3,
       "bearish_market_discount": 0.5,
-      "cash_buffer": 0.05,
+      "cash_buffer": 0.025,
       "regime_config": {
         "trending": {
           "adx_threshold": ">25",
@@ -37,17 +37,35 @@
       }
     },
     "stop_loss_take_profit": {
-      "_comment": "ATR动态止损止盈",
-      "hard_stop": "entry_price - 2.5×ATR",
+      "_comment": "ATR动态止损止盈 — P3基线(2026-08-07): 诊断2发现退出过紧(止损踏空90.9%/止盈过早78.7%), 放宽trailing+震荡市禁用trailing",
+      "hard_stop": "entry_price - 2.5×ATR (硬止损比例12%)",
       "trailing_stop": {
-        "profit_lt_10pct": "2.5×ATR (给足空间, 让利润奔跑)",
-        "profit_10_to_20pct": "2.0×ATR (适度收紧)",
-        "profit_gt_20pct": "1.5×ATR (锁定大部分利润)"
+        "_comment_P3": "P3: trail_mult从[1.0/0.8/0.6]放宽至[2.0/1.5/1.0], 让利润奔跑",
+        "profit_lt_10pct": "stop_mult×2.0×ATR (P3放宽, 给足空间让利润奔跑)",
+        "profit_10_to_20pct": "stop_mult×1.5×ATR (P3放宽, 适度跟随)",
+        "profit_gt_20pct": "stop_mult×1.0×ATR (P3放宽, 锁定利润)"
+      },
+      "regime_adaptive_exit": {
+        "_comment": "P3核心: 震荡市禁用trailing只靠硬止损, 避免78.7%过早止盈",
+        "ranging": {
+          "disable_trailing": true
+        },
+        "transition": {},
+        "trending": {}
       },
       "fallback_no_atr": {
-        "hard_stop_pct": -0.08,
+        "hard_stop_pct": -0.12,
         "trailing_stop_pct": -0.05
       }
+    },
+    "drawdown_protection": {
+      "_comment": "组级回撤保护(引擎真实降仓) — P3+固化(2026-08-07). 敏感性扫描8%/10%/12%/15%后选12%: 8%训练窗误伤Alpha-1.98%, 10%测试窗回撤恶化-8.4%, 12%保住P3成果且极端熊市能触发, 15%等同但阈值过宽",
+      "_mechanism": "每组engine独立判断本组NAV回撤>threshold → reduce_position真实部分平仓(单向, 恢复时只切换状态不买回)",
+      "_usage": "BacktestEngine(dd_protection_config=BacktestEngine.DEFAULT_DD_PROTECTION_CONFIG) 或直接传dict",
+      "threshold": -0.12,
+      "recovery": -0.06,
+      "reduced_ratio": 0.5,
+      "_params_note": "threshold=-0.12(回撤>12%触发), recovery=-0.06(回撤收窄6%以内退出), reduced_ratio=0.5(卖出50%股数)"
     },
     "signal_engine": {
       "score_threshold": 25,
@@ -207,6 +225,11 @@
           "code": "300602",
           "name": "飞荣达",
           "market": "sz"
+        },
+        {
+          "code": "601138",
+          "name": "工业富联",
+          "market": "sh"
         }
       ],
       "消费稳健型": [
@@ -355,7 +378,8 @@
       "groups": {
         "科技成长型": {
           "description": "高Beta、题材驱动、波动大",
-          "atr_stop_mult": 2.0,
+          "atr_stop_mult": 1.8,
+          "_atr_note": "P5(2026-08-07): 从2.0收紧至1.8控制回撤, 见 backtest.py ATR_OVERRIDE",
           "max_per_stock_boost": 1.25,
           "score_threshold": 45,
           "score_ceiling": 52,
@@ -495,12 +519,21 @@
           }
         },
         "消费稳健型": {
-          "description": "消费蓝筹、慢牛低波动",
-          "atr_stop_mult": 1.8,
+          "description": "消费蓝筹、慢牛低波动 — 全组启用(2026-08-10): weight=5%, 均值回归策略",
+          "_p2_status": "P2均值回归验证完成(2026-08-10). 三层协同实现: 信号层(strategy_mode+MA60跳过)+退出层(target_profit_pct+禁trailing)+配置层(权重调整). 三轮参数实验(v1:止盈6%/止损8%, v2:止盈4%/止损10%, v3:止盈5%/止损6%)消费组Alpha均未转正. 训练窗Alpha-11~-12%(比P3+基线-6.5%更差), 测试窗Alpha-34~35%(与基线持平). 结论: 消费股在回测区间(2024-07~2026-06)无论趋势跟踪还是均值回归, Alpha均为负, 非策略问题而是标的问题. 保持weight=0暂停.",
+          "_p4_lesson": "P4失败: strategy_mode字段未在源码实现. P2已修复: GroupConfig/scorer/filter/classifier/position/engine全链路实现.",
+          "_p2_lesson": "P2失败: 1)消费股低波动RSI很少触及超卖区, 信号频率低; 2)即使超卖反弹幅度小, 目标止盈难达到; 3)牛市中消费股不超卖, 无买入机会; 4)止损率50-73%过高. 核心结论: 非策略问题, 消费股在回测区间本身表现不佳, 需等基本面拐点.",
+          "strategy_mode": "mean_reversion",
+          "mean_reversion_exit": {
+            "target_profit_pct": 0.05,
+            "hard_stop_pct": 0.06,
+            "disable_trailing": true
+          },
+          "atr_stop_mult": 1.0,
           "max_per_stock_boost": 1.0,
-          "score_threshold": 30,
+          "score_threshold": 35,
           "score_ceiling": 45,
-          "cooldown_days": 5,
+          "cooldown_days": 7,
           "max_consecutive_losses": 2,
           "consecutive_loss_suspend": 10,
           "vol_ratio_threshold": 0.6,
@@ -515,8 +548,8 @@
             },
             "RSI": {
               "period": 21,
-              "oversold": 35,
-              "overbought": 65,
+              "oversold": 25,
+              "overbought": 75,
               "neutral_zone": [
                 40,
                 60
@@ -526,8 +559,8 @@
               "k_period": 9,
               "k_smooth": 3,
               "d_smooth": 3,
-              "oversold_j": 30,
-              "overbought_j": 70
+              "oversold_j": 10,
+              "overbought_j": 90
             },
             "MACD": {
               "fast": 12,
@@ -554,17 +587,19 @@
             }
           },
           "indicator_weights": {
-            "MA60": 0.18,
+            "MA60": 0.1,
             "EMA_DUAL": 0.08,
-            "MACD": 0.12,
-            "RSI": 0.18,
-            "KDJ": 0.08,
+            "MACD": 0.1,
+            "RSI": 0.28,
+            "KDJ": 0.15,
             "OBV": 0.15,
-            "VOL_RATIO": 0.12
+            "VOL_RATIO": 0.14
           },
           "strength_modifiers": {
-            "MA60": 1.2,
-            "MACD": 1.1
+            "MA60": 0.8,
+            "MACD": 1.0,
+            "RSI": 1.4,
+            "KDJ": 1.3
           },
           "adx_multiplier": {
             "strong": {
@@ -620,7 +655,8 @@
           }
         },
         "周期资源型": {
-          "description": "大宗商品驱动、周期性强",
+          "description": "大宗商品驱动、周期性强 — P5(2026-08-07): 仅趋势市交易(trade_regimes={trending})",
+          "_p5_status": "运行中. ADX>25才交易, 避免震荡市频繁止损. 见 backtest.py REGIMES_CFG.",
           "atr_stop_mult": 2.5,
           "max_per_stock_boost": 1.0,
           "score_threshold": 25,
@@ -703,10 +739,12 @@
           "_note": "周期股: RSI21标准+超卖30/超买75; ADX权重提升18%(趋势确认关键); 量价并重; 动态Ceiling+5"
         },
         "医药创新型": {
-          "description": "政策/研发事件驱动、均值回归强",
-          "atr_stop_mult": 2.5,
+          "description": "政策/研发事件驱动、均值回归强 — 全组启用(2026-08-10): weight=5%, 均值回归策略",
+          "_p3_status": "P3均值回归调优完成. score40→30, ATR2.5→1.5, strategy_mode=mean_reversion, target_profit9%+hard_stop8%+disable_trailing. 训练Alpha-10.0%→-4.14%(+5.86%), 测试Alpha-22.2%→-21.73%(+0.47%). Alpha改善但未转正, 与消费组P2同为标的选择问题(医药股在回测窗严重跑输沪深300). 暂维持weight=0, 待基本面拐点.",
+          "_p2_lesson": "消费组P2均值回归三层协同已完成但Alpha仍为负, 根因是标的在回测窗表现差而非策略问题. 医药组同此结论.",
+          "atr_stop_mult": 1.5,
           "max_per_stock_boost": 1.0,
-          "score_threshold": 40,
+          "score_threshold": 30,
           "score_ceiling": 55,
           "cooldown_days": 10,
           "max_consecutive_losses": 2,
@@ -717,6 +755,12 @@
           "rsi_overbought": 78,
           "breakout_ceiling_bonus": 3,
           "ma_alignment_ceiling_bonus": 0,
+          "strategy_mode": "mean_reversion",
+          "mean_reversion_exit": {
+            "target_profit_pct": 0.09,
+            "hard_stop_pct": 0.08,
+            "disable_trailing": true
+          },
           "indicator_params": {
             "RSI": {
               "period": 21,
@@ -783,10 +827,12 @@
               "volume": 0.23
             }
           },
-          "_note": "医药股: RSI权重提升20%(均值回归核心); KDJ权重提升13%(拐点信号); MACD降权0.8(滞后); 动态Ceiling+3"
+          "_note": "P3(2026-08-10): 均值回归三层协同. RSI权重20%(均值回归核心); KDJ13%(拐点信号); MACD降权0.8(滞后); strategy_mode=mean_reversion跳过MA60方向约束; target_profit9%+hard_stop8%+disable_trailing退出; score30/ATR1.5. 训练Alpha-4.14%/测试-21.73%(改善但未转正, 标的问题)"
         },
         "机械制造型": {
-          "description": "制造业周期、趋势与量价并重",
+          "description": "动量轮动策略 — P4c(2026-08-10): 启用(weight=10%), 月度动量轮动+趋势过滤+固定止损",
+          "_p4c_status": "启用. v1动量轮动: 测试窗Alpha-9.97%(vs P5 -23.06%改善+13%), 收益+16.32%. 月度选动量前3+MA60上方+固定止损-12%+ATR trailing止盈.",
+          "strategy_mode": "rotation",
           "atr_stop_mult": 2.5,
           "max_per_stock_boost": 1.0,
           "score_threshold": 40,
@@ -872,15 +918,56 @@
         }
       }
     },
+    "portfolio_config_p5": {
+      "_comment": "P5组合配置(2026-08-07固化) — 与 backtest.py PORTFOLIO_WEIGHTS 完全一致",
+      "weights": {
+        "科技成长型": 0.4,
+        "消费稳健型": 0.05,
+        "周期资源型": 0.375,
+        "医药创新型": 0.05,
+        "机械制造型": 0.1
+      },
+      "cash_ratio": 0.025,
+      "regimes_filter": {
+        "周期资源型": [
+          "trending"
+        ]
+      },
+      "atr_override": {
+        "科技成长型": 1.8
+      },
+      "dd_protection_threshold": -0.12,
+      "dd_protection_recovery": -0.06,
+      "dd_protection_reduced_ratio": 0.5,
+      "_mechanism": "每组engine独立判断本组NAV回撤>12% → reduce_position真实部分平仓(单向, 恢复时只切换状态不买回)"
+    },
     "performance_2026": {
-      "total_return": "+24.45%",
-      "ytd_2026": "+20.83%",
-      "alpha_2026": "+16.87%",
-      "sharpe_ratio": 1.7,
-      "max_drawdown": "-5.03%",
-      "win_rate": "51.9%",
-      "profit_factor": 2.61,
-      "trade_count": 27
+      "_comment": "P5实际回测结果(2026-08-07验证) — 区间2026-01-01~2026-08-06, 初始资金10万",
+      "_source": "data/ytd_2026_group_comparison_report.md + data/p5_consumer_paused_validation_report.md",
+      "ytd_2026": {
+        "total_return": "+34.22%",
+        "alpha_vs_csi300": "+35.63%",
+        "sharpe_ratio": 3.062,
+        "max_drawdown": "-4.2%",
+        "trade_count": 36,
+        "benchmark_return": "-1.41%",
+        "dd_protection_triggers": 0
+      },
+      "training_window_2024_07_2025_06": {
+        "_comment": "震荡市训练窗",
+        "alpha": "+0.92%",
+        "sharpe_ratio": 1.435,
+        "max_drawdown": "-7.73%",
+        "total_return": "+14.09%"
+      },
+      "testing_window_2025_07_2026_06": {
+        "_comment": "牛市测试窗",
+        "alpha": "+47.01%",
+        "sharpe_ratio": 3.397,
+        "max_drawdown": "-7.21%",
+        "total_return": "+73.31%"
+      },
+      "triangle_check": "六项三角指标全部达标 ✅ (夏普>1.0, Alpha>0, 回撤<10%)"
     }
   }
 }

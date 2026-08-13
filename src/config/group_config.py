@@ -241,6 +241,8 @@ class GroupConfig:
             "indicator_weights": gc.get("indicator_weights", None),
             "strength_modifiers": gc.get("strength_modifiers", {}),
             "forced_regime": forced_regime,  # 手动模式: 强制体制, 覆盖ADX自动检测
+            "strategy_mode": gc.get("strategy_mode", "trend_following"),  # 均值回归/趋势跟踪模式
+            "mean_reversion_exit": gc.get("mean_reversion_exit", {}),  # 均值回归退出参数
         }
 
     def get_regime_filter_overrides(self, code: str) -> dict:

@@ -78,9 +78,24 @@ def update_full_config(data: dict):
 
 @router.get("/groups")
 def get_groups():
+    """返回分组列表 + P5组合权重/活跃状态
+
+    前端回测页据此标注暂停组(权重=0), 灰显不可选.
+    """
     cfg = _load_config()
-    gc = cfg.get("strategy_config", {}).get("group_config", {})
-    groups = list(gc.get("groups", {}).keys())
+    sc = cfg.get("strategy_config", {})
+    gc = sc.get("group_config", {})
+    group_names = list(gc.get("groups", {}).keys())
+    weights = sc.get("portfolio_config_p5", {}).get("weights", {})
+
+    groups = []
+    for name in group_names:
+        w = weights.get(name, 0)
+        groups.append({
+            "name": name,
+            "weight": w,
+            "active": w > 0,
+        })
     return {"groups": groups}
 
 

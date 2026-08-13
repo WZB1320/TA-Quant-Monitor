@@ -294,7 +294,14 @@ class SignalClassifier:
           - 看多信号在MA60空头区域 → 直接降为观望(不买入)
           - 看空信号在MA60多头区域 → 直接降为观望(不卖出)
           - MA60为滞后指标, 方向相反时代表趋势不支撑, 应硬性过滤
+
+        均值回归模式跳过: 允许在空头区域买入超卖反弹, 多头区域卖出超买回落.
         """
+        # 均值回归模式跳过 MA60 方向约束
+        strategy_mode = material.group_params.get("strategy_mode", "trend_following")
+        if strategy_mode == "mean_reversion":
+            return level, ""
+
         ma60 = material.indicator_results.get("MA60")
         if ma60 is None:
             return level, ""

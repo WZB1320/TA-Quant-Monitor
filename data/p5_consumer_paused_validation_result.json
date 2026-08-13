@@ -1,0 +1,22 @@
+{
+  "train": {
+    "sharpe": 1.435,
+    "total_return_pct": 14.09,
+    "alpha_pct": 0.92,
+    "benchmark_return_pct": 13.16,
+    "max_drawdown_pct": -7.73,
+    "trade_count": 38,
+    "dd_triggers": 0,
+    "dd_reduce_trades": 0
+  },
+  "test": {
+    "sharpe": 3.397,
+    "total_return_pct": 73.31,
+    "alpha_pct": 47.01,
+    "benchmark_return_pct": 26.29,
+    "max_drawdown_pct": -7.21,
+    "trade_count": 69,
+    "dd_triggers": 1,
+    "dd_reduce_trades": 2
+  }
+}

@@ -87,9 +87,33 @@ class PositionManager:
                 return name
         return "transition"
 
+    # 执行层参数默认值 (P3基线, 可被 stop_loss_params 覆盖, 用于敏感性扫描)
+    # P3优化 (2026-08-07): 诊断2发现退出逻辑过紧(止损踏空90.9%, 止盈过早78.7%),
+    # 放宽trailing倍率让利润奔跑 + 稍宽硬止损, 训练窗Alpha从-4.9%转正至+1.59%.
+    DEFAULT_STOP_PARAMS = {
+        'hard_stop_pct': 0.12,        # 硬止损比例 (P3: 0.10→0.12, 稍宽避免假突破)
+        'trail_tier1_threshold': 0.10,  # 盈利10%进入第二档
+        'trail_tier2_threshold': 0.20,  # 盈利20%进入第三档
+        'trail_mult_low': 2.0,         # 盈利<10%: trailing_mult = stop_mult × 2.0 (P3: 1.0→2.0, 让利润奔跑)
+        'trail_mult_mid': 1.5,         # 盈利10~20%: trailing_mult = stop_mult × 1.5 (P3: 0.8→1.5)
+        'trail_mult_high': 1.0,        # 盈利>20%: trailing_mult = stop_mult × 1.0 (P3: 0.6→1.0)
+        'no_atr_hard_stop_pct': 0.12,  # 无ATR时硬止损比例 (同步P3)
+        'no_atr_trail_drawdown': 0.05, # 无ATR时移动止盈回撤比例
+    }
+
+    # 分体制退出默认配置 (P3基线)
+    # 震荡市(ranging)禁用移动止盈: 诊断2发现78.7%止盈过早, 震荡市趋势跟踪退出
+    # 无论多宽都会被振出, 禁用后只靠硬止损+信号退出, 骑住波动.
+    # 趋势市(trending)/过渡市(transition)保持trailing, 放宽后让利润奔跑.
+    DEFAULT_REGIME_EXIT_CONFIG = {
+        "ranging": {"disable_trailing": True},
+    }
+
     def __init__(self, initial_capital: float, position_ratio: float = 0.3,
                  commission_rate: float = 0.0003, slippage: float = 0.0001,
-                 risk_per_trade: float = 0.01, atr_stop_mult: float = 2.0):
+                 risk_per_trade: float = 0.01, atr_stop_mult: float = 2.0,
+                 stop_loss_params: dict = None,
+                 regime_exit_config: dict = None):
         """
         Args:
             initial_capital: 初始资金
@@ -98,6 +122,14 @@ class PositionManager:
             slippage: 滑点率 (默认万一)
             risk_per_trade: 每笔交易最大风险敞口 (默认 1%, 即每笔最多亏总资金的1%)
             atr_stop_mult: ATR 止损倍率 (默认 2.0x ATR)
+            stop_loss_params: 止损止盈参数覆盖 (用于敏感性扫描), None=用默认值.
+                可含键: hard_stop_pct/trail_tier1_threshold/trail_tier2_threshold/
+                trail_mult_low/trail_mult_mid/trail_mult_high/
+                no_atr_hard_stop_pct/no_atr_trail_drawdown
+            regime_exit_config: 分体制退出参数覆盖, 格式 {regime: {key: val}}.
+                可含键: disable_trailing(True=禁用移动止盈,仅硬止损), 以及stop_loss_params所有键.
+                例: {"ranging": {"disable_trailing": True, "hard_stop_pct": 0.12}}
+                None=不分体制(向后兼容). 诊断2发现震荡市trailing过紧致踏空78.7%.
         """
         self.initial_capital = initial_capital
         self.cash = initial_capital
@@ -106,6 +138,15 @@ class PositionManager:
         self.slippage = slippage
         self.risk_per_trade = risk_per_trade
         self.atr_stop_mult = atr_stop_mult
+        # 合并执行层参数 (默认值 + 用户覆盖)
+        self._stop_params = {**self.DEFAULT_STOP_PARAMS,
+                             **(stop_loss_params or {})}
+        # 分体制退出参数覆盖 (regime-adaptive exit)
+        # None=用默认配置(P3: 震荡市禁用trailing), {}=禁用分体制退出
+        if regime_exit_config is None:
+            self._regime_exit_config = dict(self.DEFAULT_REGIME_EXIT_CONFIG)
+        else:
+            self._regime_exit_config = regime_exit_config
         self._open: Dict[str, Trade] = {}
         self.closed_trades: List[Trade] = []
         self._regime: str = "transition"  # 当前市场体制
@@ -270,6 +311,45 @@ class PositionManager:
         self.closed_trades.append(trade)
         return trade
 
+    def reduce_position(self, symbol: str, exit_date: date, exit_price: float,
+                        reduce_ratio: float, signal: str = "回撤保护降仓") -> Optional[Trade]:
+        """
+        部分平仓 — 按比例卖出部分股数, 剩余继续持有 (组合级回撤保护真实降仓用).
+
+        机制:
+          - 计算 reduce_ratio 比例的卖出股数 (向下取整到100股)
+          - 创建一个"部分平仓" Trade (复制 entry 信息, shares=卖出股数), close 它, 加入 closed_trades
+          - 减少 open Trade 的 shares (entry_price/highest_price/ATR止损参数保持不变)
+          - 回笼现金 (扣佣金+印花税)
+
+        单向降仓: 只卖不买, 恢复时由调用方切换状态, 不在此处买回.
+
+        Returns:
+            已部分平仓的 Trade 或 None (无持仓/股数不足时)
+        """
+        trade = self._open.get(symbol)
+        if trade is None:
+            return None
+        sell_shares = int(trade.shares * reduce_ratio / 100) * 100
+        if sell_shares < 100:
+            return None
+        # 部分平仓 Trade (复制 entry 信息, shares=卖出股数)
+        partial = Trade(
+            symbol=symbol, side=trade.side,
+            entry_date=trade.entry_date, entry_price=trade.entry_price,
+            shares=sell_shares, entry_signal=trade.entry_signal,
+        )
+        revenue = sell_shares * exit_price
+        comm = max(revenue * self.commission_rate, 5)
+        stamp = revenue * 0.001  # 印花税千1, 仅卖出收取
+        total_comm = comm + stamp
+        partial.close(exit_date, exit_price, signal, commission=total_comm)
+        self.cash += (revenue - total_comm)
+        self.closed_trades.append(partial)
+        # 减少open Trade股数 (entry_price/highest_price/_atr_*不变, 止损逻辑对剩余持仓延续)
+        trade.shares -= sell_shares
+        return partial
+
     # ── 市值计算 ──
 
     def market_value(self, current_prices: Dict[str, float]) -> float:
@@ -327,7 +407,7 @@ class PositionManager:
                         current_date: date,
                         signal_score: float = None) -> Optional[Trade]:
         """
-        检查是否触发止损/移动止盈 (基于 ATR 动态调整)
+        检查是否触发止损/移动止盈 (基于 ATR 动态调整, 支持分体制退出)
 
         规则:
           1. 硬止损: 价格触及 entry_price - 2.5×ATR → 平仓
@@ -335,6 +415,8 @@ class PositionManager:
              - 盈利 < 10%: stop_dist = 2.5×ATR (给足空间, 让利润奔跑)
              - 盈利 10~20%: stop_dist = 2.0×ATR (适度收紧)
              - 盈利 > 20%: stop_dist = 1.5×ATR (锁定大部分利润)
+          3. 分体制退出 (regime_exit_config): 震荡市可禁用trailing只靠硬止损,
+             避免趋势跟踪退出在震荡市频繁踏空 (诊断2: 78.7%过早止盈)
 
         Args:
             symbol: 股票代码
@@ -353,25 +435,43 @@ class PositionManager:
         if current_price > trade.highest_price:
             trade.highest_price = current_price
 
-        # ── 安全网: 10%硬止损 (所有模式永远生效) ──
-        if current_price <= trade.entry_price * 0.90:
+        # ── 分体制退出参数: 合并基础参数 + 当前regime覆盖 ──
+        regime_overrides = self._regime_exit_config.get(self._regime, {})
+        effective_params = {**self._stop_params, **regime_overrides}
+        disable_trailing = regime_overrides.get("disable_trailing", False)
+
+        # ── 安全网: 硬止损 (所有模式永远生效) ──
+        hard_stop_pct = effective_params['hard_stop_pct']
+        if current_price <= trade.entry_price * (1 - hard_stop_pct):
             pnl_pct = (current_price - trade.entry_price) / trade.entry_price
             return self.close_position(symbol, current_date, current_price,
                                        f"安全网硬止损 ({pnl_pct*100:.1f}%, 保本底线)")
+
+        # ── 均值回归: 目标价止盈 (盈利达到目标即平仓, 不等trailing) ──
+        # 均值回归策略利润不奔跑, 到达目标即止盈.
+        # target_profit_pct > 0 时启用, 在 trailing 检查之前触发.
+        target_profit_pct = effective_params.get('target_profit_pct', 0)
+        if target_profit_pct > 0:
+            profit_pct = (current_price - trade.entry_price) / trade.entry_price
+            if profit_pct >= target_profit_pct:
+                return self.close_position(symbol, current_date, current_price,
+                                           f"均值回归止盈 ({profit_pct*100:.1f}%, 目标{target_profit_pct*100:.0f}%)")
 
         # 获取 ATR 止损距离
         atr_val = getattr(trade, '_atr_value', None)
         # 使用交易级别的 atr_stop_mult (分组专属), 否则用全局默认值
         trade_stop_mult = getattr(trade, '_atr_stop_mult', self.atr_stop_mult)
         if atr_val is not None and atr_val > 0:
-            # ── 盈利自适应移动止盈倍率 ──
+            # ── 盈利自适应移动止盈倍率 (参数可配置, 用于敏感性扫描) ──
             profit_pct = (current_price - trade.entry_price) / trade.entry_price
-            if profit_pct > 0.20:
-                trailing_mult = trade_stop_mult * 0.6   # 1.5 (盈利>20%, 锁定利润)
-            elif profit_pct > 0.10:
-                trailing_mult = trade_stop_mult * 0.8   # 2.0 (盈利10~20%, 适度收紧)
+            t1 = effective_params['trail_tier1_threshold']
+            t2 = effective_params['trail_tier2_threshold']
+            if profit_pct > t2:
+                trailing_mult = trade_stop_mult * effective_params['trail_mult_high']
+            elif profit_pct > t1:
+                trailing_mult = trade_stop_mult * effective_params['trail_mult_mid']
             else:
-                trailing_mult = trade_stop_mult          # 2.5 (盈利<10%, 给足空间)
+                trailing_mult = trade_stop_mult * effective_params['trail_mult_low']
 
             stop_dist = atr_val * trade_stop_mult  # 硬止损始终用原始倍率
             trailing_dist = atr_val * trailing_mult    # 移动止盈用自适应倍率
@@ -382,22 +482,23 @@ class PositionManager:
                 return self.close_position(symbol, current_date, current_price,
                                            f"ATR硬止损 ({pnl_pct*100:.1f}%, ATR={atr_val:.2f})")
 
-            # ATR 移动止盈 (盈利自适应倍率)
-            if trade.highest_price > trade.entry_price:
+            # ATR 移动止盈 (盈利自适应倍率) — 震荡市可禁用
+            if not disable_trailing and trade.highest_price > trade.entry_price:
                 if current_price <= trade.highest_price - trailing_dist:
                     drawdown = (current_price - trade.highest_price) / trade.highest_price
                     return self.close_position(symbol, current_date, current_price,
                                                f"ATR移动止盈 (最高{trade.highest_price:.2f}, "
                                                f"回撤{drawdown*100:.1f}%, 盈利{profit_pct*100:.1f}%)")
         else:
-            # 无 ATR 时回退到固定百分比
+            # 无 ATR 时回退到固定百分比 (参数可配置)
             pnl_pct = (current_price - trade.entry_price) / trade.entry_price
-            if pnl_pct <= -0.10:
+            if pnl_pct <= -effective_params['no_atr_hard_stop_pct']:
                 return self.close_position(symbol, current_date, current_price,
                                            f"硬止损 ({pnl_pct*100:.1f}%)")
-            if trade.highest_price > trade.entry_price:
+            # 移动止盈 — 震荡市可禁用
+            if not disable_trailing and trade.highest_price > trade.entry_price:
                 drawdown = (current_price - trade.highest_price) / trade.highest_price
-                if drawdown <= -0.05:
+                if drawdown <= -effective_params['no_atr_trail_drawdown']:
                     return self.close_position(symbol, current_date, current_price,
                                                f"移动止盈 (回撤{drawdown*100:.1f}%)")
 

@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import { useWatchlistStore } from '../../stores/watchlist'
-import { backtestApi } from '../../api'
+import { backtestApi, configApi } from '../../api'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -18,7 +18,7 @@ export default function BacktestPage() {
   const { message } = App.useApp()
   const MODE_LABELS: Record<string, string> = { base: '基础', trending: '趋势上涨', ranging: '震荡' }
   const MODE_COLORS: Record<string, string> = { base: '#64748b', trending: '#3b82f6', ranging: '#f59e0b' }
-  const { groups, fetchWatchlist } = useWatchlistStore()
+  const { fetchWatchlist } = useWatchlistStore()
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState(0)
   const [progressText, setProgressText] = useState('')
@@ -28,9 +28,11 @@ export default function BacktestPage() {
   const [selectedMode, setSelectedMode] = useState<string>('base')
   const [dateRange, setDateRange] = useState<[any, any]>([null, null])
   const [initialCapital, setInitialCapital] = useState<number>(100000)
+  const [groupConfigs, setGroupConfigs] = useState<{ name: string; weight: number; active: boolean }[]>([])
 
   useEffect(() => {
     fetchWatchlist()
+    configApi.getGroups().then(res => setGroupConfigs(res.data.groups || []))
   }, [])
 
   // 根据选中分组过滤交易记录
@@ -392,16 +394,30 @@ export default function BacktestPage() {
             />
           </div>
           <div>
-            <Text style={{ color: '#94a3b8', fontSize: 12, display: 'block', marginBottom: 4 }}>参与分组</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 12, display: 'block', marginBottom: 4 }}>展示分组</Text>
             <Select
               size="small"
               mode="multiple"
-              placeholder="全部分组"
+              placeholder="全部展示"
               value={selectedGroups}
               onChange={setSelectedGroups}
-              style={{ minWidth: 200 }}
-              options={groups.map(g => ({ value: g.name, label: g.name }))}
+              style={{ minWidth: 240 }}
+              options={groupConfigs.map(g => ({
+                value: g.name,
+                label: (
+                  <span style={{ color: g.active ? '#e2e8f0' : '#64748b' }}>
+                    {g.name}
+                    <span style={{ fontSize: 11, marginLeft: 4, color: g.active ? '#22c55e' : '#94a3b8' }}>
+                      {g.active ? `${(g.weight * 100).toFixed(1)}%` : '已暂停'}
+                    </span>
+                  </span>
+                ),
+                disabled: !g.active,
+              }))}
             />
+            <Text style={{ color: '#64748b', fontSize: 11, display: 'block', marginTop: 2 }}>
+              回测始终跑全部活跃组, 此处仅筛选交易明细展示
+            </Text>
           </div>
           <div>
             <Text style={{ color: '#94a3b8', fontSize: 12, display: 'block', marginBottom: 4 }}>策略模式</Text>
@@ -445,16 +461,20 @@ export default function BacktestPage() {
       {result && m && (
         <>
           {/* 回测模式标识 */}
-          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text style={{ color: '#94a3b8', fontSize: 13 }}>回测模式：</Text>
             <Tag color={MODE_COLORS[selectedMode]} style={{ fontSize: 13, padding: '0 8px' }}>
               {MODE_LABELS[selectedMode]}
             </Tag>
+            <Text style={{ color: '#94a3b8', fontSize: 13 }}>回测分组：</Text>
+            {(result.groups || []).map((g: string) => (
+              <Tag key={g} color="#1e2d45" style={{ color: '#93c5fd', fontSize: 12 }}>{g}</Tag>
+            ))}
             {selectedGroups.length > 0 && (
               <>
-                <Text style={{ color: '#94a3b8', fontSize: 13 }}>参与分组：</Text>
+                <Text style={{ color: '#94a3b8', fontSize: 13, marginLeft: 12 }}>展示筛选：</Text>
                 {selectedGroups.map(g => (
-                  <Tag key={g} color="#1e2d45" style={{ color: '#93c5fd', fontSize: 12 }}>{g}</Tag>
+                  <Tag key={g} color="#1e2d45" style={{ color: '#f59e0b', fontSize: 12 }}>{g}</Tag>
                 ))}
               </>
             )}
@@ -541,7 +561,7 @@ export default function BacktestPage() {
               <Text style={{ color: '#e2e8f0' }}>
                 净值曲线
                 <Text style={{ color: '#64748b', fontSize: 12, marginLeft: 8 }}>
-                  {MODE_LABELS[selectedMode]} · {selectedGroups.length > 0 ? selectedGroups.join('、') : '全部分组'}
+                  {MODE_LABELS[selectedMode]} · {(result.groups || []).join('、')}
                 </Text>
               </Text>
             }
@@ -562,7 +582,7 @@ export default function BacktestPage() {
               <Text style={{ color: '#e2e8f0' }}>
                 回撤曲线
                 <Text style={{ color: '#64748b', fontSize: 12, marginLeft: 8 }}>
-                  {MODE_LABELS[selectedMode]} · {selectedGroups.length > 0 ? selectedGroups.join('、') : '全部分组'}
+                  {MODE_LABELS[selectedMode]} · {(result.groups || []).join('、')}
                 </Text>
               </Text>
             }

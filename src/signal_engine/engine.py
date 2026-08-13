@@ -38,7 +38,9 @@ class SignalEngine:
 
     def __init__(self, dedup_days: int = 5, group_config=None,
                  forced_regime: Optional[str] = None,
-                 memory: Optional[StrategyMemory] = None):
+                 memory: Optional[StrategyMemory] = None,
+                 reverse_mode: bool = False,
+                 log_detail: bool = False):
         """
         Args:
             dedup_days: 信号去重天数
@@ -48,6 +50,8 @@ class SignalEngine:
                 "auto" → 强制 auto (ADX 自动判断), 覆盖 user_preferences
                 "trending" / "ranging" → 强制该模式, 覆盖 user_preferences
             memory: 策略记忆层实例, 可选. 传入则记录 actionable 信号到 JSONL
+            reverse_mode: 反转模式 — 指标 direction 取反 (反转实验用)
+            log_detail: 是否记录每个因子贡献的详细日志 (DEBUG级别)
         """
         self.pipeline = IndicatorPipeline()
         self.scorer = Scorer()
@@ -57,6 +61,8 @@ class SignalEngine:
         self.group_config = group_config  # GroupConfig 实例, 可选
         self.forced_regime = forced_regime  # 请求级 regime 覆盖
         self.memory = memory  # 策略记忆层, 可选
+        self.reverse_mode = reverse_mode  # 反转模式
+        self.log_detail = log_detail  # 详细日志
 
     def analyze(self, symbol: str, df: pd.DataFrame,
                 analysis_date: "date | None" = None) -> SignalResult:
@@ -92,13 +98,37 @@ class SignalEngine:
         # Step 1: 指标计算 (传入分组专属指标参数)
         indicator_results = self.pipeline.run(df, indicator_params=indicator_params)
 
+        # Step 1.5: 反转模式 — 所有指标 direction 取反
+        # 必须在 indicator_results 层反转, 这样 hard_filter / scorer / classifier / filter
+        # 整条决策链路都用反转后的方向, 买卖决策才会真正反转。
+        # (仅在 scorer 层反转只会改 score 数值, 不改 hard_filter/classifier 的方向判断)
+        #
+        # 均值回归模式 (strategy_mode="mean_reversion") 不在此处反转指标方向。
+        # RSI/KDJ 的原始逻辑已经符合均值回归: 超卖拐头→看多, 超买拐头→看空。
+        # 均值回归与趋势跟踪的区别通过以下方式实现:
+        #   1. 权重调整: RSI/KDJ 权重提升, MA60/趋势类权重降低
+        #   2. MA60 方向约束跳过 (filter + classifier): 允许在空头区域买入超卖反弹
+        #   3. 退出逻辑: 目标价止盈 + 禁用 trailing (均值回归利润不奔跑)
+        if self.reverse_mode:
+            for _name, _r in indicator_results.items():
+                if hasattr(_r, "direction"):
+                    _r.direction = -_r.direction
+                    if _r.signal == "buy":
+                        _r.signal = "sell"
+                    elif _r.signal == "sell":
+                        _r.signal = "buy"
+
         # Step 2: 硬过滤检查
         blocked, block_reason = self.filter.hard_filter(indicator_results)
 
         # Step 3: 加权评分 (使用分组专属权重+强度修正)
         scorer = Scorer(indicator_weights=indicator_weights,
-                        strength_modifiers=strength_modifiers)
-        score = scorer.score(indicator_results, regime_weights=regime_weights, forced_regime=forced_regime)
+                        strength_modifiers=strength_modifiers,
+                        reverse_mode=self.reverse_mode)
+        score = scorer.score(indicator_results, regime_weights=regime_weights,
+                             forced_regime=forced_regime,
+                             log_detail=self.log_detail,
+                             symbol=symbol, analysis_date=analysis_date)
         cat_scores = scorer.score_by_category(indicator_results)
 
         # Step 3.1: 将得分注入 indicator_results (供 filter 使用)

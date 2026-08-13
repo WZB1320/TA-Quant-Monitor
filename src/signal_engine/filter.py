@@ -298,11 +298,14 @@ class SignalFilter:
             return level, ""
 
         # 空头区域不能出看多信号 → 直接降为观望
-        if ma60.direction == -1 and level.is_bullish:
-            return SignalLevel.NEUTRAL, "价格在MA60下方(空头区域)，不发看多信号"
-        # 多头区域不能出看空信号 → 直接降为观望
-        if ma60.direction == 1 and level.is_bearish:
-            return SignalLevel.NEUTRAL, "价格在MA60上方(多头区域)，不发看空信号"
+        # 均值回归模式跳过: 允许在空头区域买入超卖反弹
+        strategy_mode = group_params.get("strategy_mode", "trend_following")
+        if strategy_mode != "mean_reversion":
+            if ma60.direction == -1 and level.is_bullish:
+                return SignalLevel.NEUTRAL, "价格在MA60下方(空头区域)，不发看多信号"
+            # 多头区域不能出看空信号 → 直接降为观望
+            if ma60.direction == 1 and level.is_bearish:
+                return SignalLevel.NEUTRAL, "价格在MA60上方(多头区域)，不发看空信号"
 
         # 最低得分阈值 (分组专属)
         score = indicator_results.get("SCORE")
