@@ -12,10 +12,13 @@
 
 设计说明:
   - 执行价用信号日收盘价 (个股回测为展示工具, 简化T+1)
-  - 止损规则与组合回测完全一致 (复用 PositionManager.check_stop_loss)
+  - 止损规则与组合回测完全一致 (复用 PositionManager.check_stop_loss,
+    含分组 mean_reversion_exit 桥接: 目标止盈/紧止损/禁trailing)
   - 同时调用 SignalFilter.record_exit/record_loss, 让 SignalEngine 内部冷却也生效
-  - SignalEngine.analyze 内部已将不可执行的 bullish 信号降级为 NEUTRAL,
-    因此 level.is_bullish 即表示"可执行的买入信号"
+  - 买/卖门槛与组合回测一致: 仅执行 actionable 级别 (BUY/SELL 及以上),
+    WEAK_BUY/WEAK_SELL 不触发交易
+  - 市场体制恒为 transition (个股回测无基准数据, 无法判断大盘 regime;
+    均值回归组的 disable_trailing 覆盖了全部体制, 不受此影响)
 """
 from datetime import date, timedelta
 from typing import Dict, Optional, Any
@@ -55,6 +58,22 @@ class PositionStateTracker:
         self.cooldown_days = group_config.get_cooldown_days(symbol)
         self.atr_stop_mult = group_config.get_atr_stop_mult(symbol)
 
+        # ── 均值回归退出配置桥接 (与 BacktestEngine 构造函数的合并逻辑一致) ──
+        # 使消费/医药等 mean_reversion 组的目标止盈/紧止损/禁trailing 在个股回测同样生效,
+        # 否则个股页走默认趋势跟踪退出, 与组合回测口径脱节.
+        params = group_config.get_all_group_params(symbol)
+        mean_reversion_config = params.get("mean_reversion_exit") or None
+        stop_loss_params = None
+        regime_exit_config = None
+        if mean_reversion_config:
+            _mr_stop = {k: v for k, v in mean_reversion_config.items()
+                        if k in ("target_profit_pct", "hard_stop_pct")}
+            stop_loss_params = _mr_stop  # PositionManager 会合并到 P3 默认参数上
+            if mean_reversion_config.get("disable_trailing"):
+                regime_exit_config = {"ranging": {"disable_trailing": True},
+                                      "transition": {"disable_trailing": True},
+                                      "trending": {"disable_trailing": True}}
+
         # 复用 PositionManager 的止损逻辑
         # 资金设大, 避免因资金不足导致开仓失败 (个股回测不关心资金, 只用止损逻辑)
         self.position_mgr = PositionManager(
@@ -62,6 +81,8 @@ class PositionStateTracker:
             position_ratio=0.3,
             risk_per_trade=0.05,
             atr_stop_mult=self.atr_stop_mult,
+            stop_loss_params=stop_loss_params,
+            regime_exit_config=regime_exit_config,
         )
 
         # 状态机
@@ -104,8 +125,9 @@ class PositionStateTracker:
                      atr_value: Optional[float], today: date,
                      result: Dict) -> None:
         """空仓: 检查买入信号"""
-        # level.is_bullish 即表示可执行的买入信号 (analyze 内部已降级不可执行的)
-        if signal_result.level.is_bullish:
+        # 买入门槛与组合回测一致: 仅 actionable 且偏多 (BUY/STRONG_BUY).
+        # WEAK_BUY("关注(偏多)") 只是观察级信号, 不触发交易.
+        if signal_result.level.is_actionable and signal_result.level.is_bullish:
             self._open_position(signal_result, close_price, atr_value, today)
             if self.state == self.HOLDING:
                 result['action'] = 'BUY'
@@ -127,8 +149,9 @@ class PositionStateTracker:
             result['cooldown_remaining'] = self._cooldown_remaining(today)
             return
 
-        # 2. 卖出信号检查 (bearish 信号不受冷却/去重约束)
-        if signal_result.level.is_bearish:
+        # 2. 卖出信号检查 (与组合回测一致: 仅 actionable 级别的偏空信号;
+        #    WEAK_SELL("注意(偏空)") 不触发交易)
+        if signal_result.level.is_actionable and signal_result.level.is_bearish:
             closed = self.position_mgr.close_position(
                 self.symbol, today, close_price,
                 signal=f"{signal_result.level.label} score={signal_result.score:+.1f}",
@@ -190,7 +213,12 @@ class PositionStateTracker:
     # ── 状态信息计算 ──
 
     def _holding_info(self, close_price: float, today: date) -> Dict[str, Any]:
-        """计算持仓状态信息 (止损价/移动止盈价/浮盈亏等)"""
+        """计算持仓状态信息 (止损价/移动止盈价/浮盈亏等)
+
+        展示价直接读取 PositionManager 的生效参数计算, 与 check_stop_loss
+        的实际触发逻辑单源一致 (旧实现硬编码 10% 硬止损和 0.6/0.8/1.0 旧倍率,
+        与实际触发的 12% 硬止损、P3 新倍率不符, 展示价与真实平仓价对不上).
+        """
         trade = self.position_mgr.open_positions.get(self.symbol)
         if trade is None:
             return {}
@@ -202,32 +230,44 @@ class PositionStateTracker:
         pnl_pct = ((close_price - trade.entry_price) / trade.entry_price * 100
                     if trade.entry_price else 0.0)
 
-        # 止损价计算 (与 PositionManager.check_stop_loss 逻辑一致)
+        # ── 与 check_stop_loss 相同的参数生效方式: 基础参数 + 当前体制覆盖 ──
+        pm = self.position_mgr
+        regime_overrides = pm._regime_exit_config.get(pm._regime, {})
+        p = {**pm._stop_params, **regime_overrides}
+        disable_trailing = regime_overrides.get("disable_trailing", False)
+
+        # 硬止损价 (安全网)
+        hard_stop = trade.entry_price * (1 - p['hard_stop_pct'])
+
+        # ATR 硬止损价
         atr_val = getattr(trade, '_atr_value', None)
         stop_mult = getattr(trade, '_atr_stop_mult', self.atr_stop_mult)
-
-        # 10%硬止损价
-        hard_stop = trade.entry_price * 0.90
-        # ATR硬止损价
         atr_stop = trade.entry_price - atr_val * stop_mult if atr_val else None
         # 有效止损价 = 较高者 (先触发)
         stop_loss_price = max(hard_stop, atr_stop) if atr_stop else hard_stop
 
-        # 移动止盈价 (仅盈利时有效, 盈利自适应倍率)
+        # 均值回归目标止盈价
+        target_profit_pct = p.get('target_profit_pct', 0)
+        take_profit_price = (trade.entry_price * (1 + target_profit_pct)
+                             if target_profit_pct > 0 else None)
+
+        # 移动止盈价 (仅盈利且未禁用 trailing 时有效, 倍率与 check_stop_loss 一致)
         trailing_stop_price = None
-        if atr_val and atr_val > 0 and trade.highest_price > trade.entry_price:
+        if (not disable_trailing and atr_val and atr_val > 0
+                and trade.highest_price > trade.entry_price):
             profit_pct = (close_price - trade.entry_price) / trade.entry_price
-            if profit_pct > 0.20:
-                trailing_mult = stop_mult * 0.6   # 盈利>20%, 锁定利润
-            elif profit_pct > 0.10:
-                trailing_mult = stop_mult * 0.8   # 盈利10~20%, 适度收紧
+            if profit_pct > p['trail_tier2_threshold']:
+                trailing_mult = stop_mult * p['trail_mult_high']
+            elif profit_pct > p['trail_tier1_threshold']:
+                trailing_mult = stop_mult * p['trail_mult_mid']
             else:
-                trailing_mult = stop_mult          # 盈利<10%, 给足空间
+                trailing_mult = stop_mult * p['trail_mult_low']
             trailing_stop_price = trade.highest_price - atr_val * trailing_mult
 
         return {
             'entry_price': round(trade.entry_price, 2),
             'stop_loss_price': round(stop_loss_price, 2),
+            'take_profit_price': round(take_profit_price, 2) if take_profit_price else None,
             'trailing_stop_price': round(trailing_stop_price, 2) if trailing_stop_price else None,
             'highest_price': round(trade.highest_price, 2),
             'holding_pnl_pct': round(pnl_pct, 2),
@@ -246,6 +286,7 @@ class PositionStateTracker:
             'action': 'NONE',
             'entry_price': None,
             'stop_loss_price': None,
+            'take_profit_price': None,
             'trailing_stop_price': None,
             'highest_price': None,
             'holding_pnl_pct': None,

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Card, Button, DatePicker, InputNumber, Select, Typography, Space, Table,
-  Tag, Statistic, Row, Col, Progress, App, Spin,
+  Tag, Statistic, Row, Col, Progress, App, Tooltip,
 } from 'antd'
 import {
   PlayCircleOutlined, DownloadOutlined, ArrowUpOutlined,
-  ArrowDownOutlined, TrophyOutlined, WarningOutlined,
+  ArrowDownOutlined, TrophyOutlined, WarningOutlined, QuestionCircleOutlined,
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import { useWatchlistStore } from '../../stores/watchlist'
@@ -57,7 +57,7 @@ export default function BacktestPage() {
     }
 
     // 基准净值 (如果后端返回了基准数据, 否则用初始资金直线)
-    const benchmark = values.map((_, i) => {
+    const benchmark = values.map((_: number, i: number) => {
       // 简单基准: 从初始资金按 benchmark_return 线性增长
       const benchReturn = result.metrics?.benchmark_return || 0
       const progress = i / (values.length - 1 || 1)
@@ -284,7 +284,7 @@ export default function BacktestPage() {
       title: '卖出日',
       dataIndex: 'exit_date',
       width: 100,
-      render: (v: string) => <Text style={{ fontFamily: 'monospace', fontSize: 12 }}>{v || '-'}</Text>,
+      render: (v: string) => <Text style={{ fontFamily: 'monospace', fontSize: 12 }}>{v ? String(v).slice(0, 10) : '-'}</Text>,
     },
     {
       title: '卖出价',
@@ -394,7 +394,12 @@ export default function BacktestPage() {
             />
           </div>
           <div>
-            <Text style={{ color: '#94a3b8', fontSize: 12, display: 'block', marginBottom: 4 }}>展示分组</Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+              <Text style={{ color: '#94a3b8', fontSize: 12 }}>展示分组</Text>
+              <Tooltip title="回测始终跑全部活跃组, 此处仅筛选交易明细展示">
+                <QuestionCircleOutlined style={{ color: '#64748b', fontSize: 12 }} />
+              </Tooltip>
+            </div>
             <Select
               size="small"
               mode="multiple"
@@ -415,9 +420,6 @@ export default function BacktestPage() {
                 disabled: !g.active,
               }))}
             />
-            <Text style={{ color: '#64748b', fontSize: 11, display: 'block', marginTop: 2 }}>
-              回测始终跑全部活跃组, 此处仅筛选交易明细展示
-            </Text>
           </div>
           <div>
             <Text style={{ color: '#94a3b8', fontSize: 12, display: 'block', marginBottom: 4 }}>策略模式</Text>

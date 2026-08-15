@@ -166,13 +166,6 @@ const DEFAULT_REGIME_WEIGHTS: Record<string, Record<string, number>> = {
   transition: { trend: 0.28, strength: 0.18, momentum: 0.32, volume: 0.22 },
 }
 
-// preset 覆盖相关的字段
-const PRESET_KEYS = [
-  'score_threshold', 'score_ceiling', 'cooldown_days',
-  'atr_stop_mult', 'max_consecutive_losses', 'consecutive_loss_suspend',
-  'atr_price_ratio_max',
-]
-
 // 缓存数据结构
 interface CachedConfig {
   config: Record<string, any>

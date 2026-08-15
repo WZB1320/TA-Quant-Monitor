@@ -18,7 +18,7 @@ interface SignalExecution {
   reason: string
 }
 
-interface SignalResult {
+export interface SignalResult {
   code: string
   name: string
   market: string

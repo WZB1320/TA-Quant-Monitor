@@ -206,8 +206,6 @@ class PositionManager:
         if self.has_position(symbol):
             return None
 
-        total_capital = self.total_value({symbol: entry_price})
-
         # ── 体制自适应: 取市场与个股的较低值 ──
         effective_regime = self._effective_regime(stock_regime)
         config = self.REGIME_CONFIG[effective_regime]
@@ -216,6 +214,11 @@ class PositionManager:
 
         # 已有持仓市值 (用持仓的 entry_price 近似, 因为 open_long 时没有全部行情)
         existing_mv = sum(t.shares * t.entry_price for t in self._open.values())
+        # 总资产 = 现金 + 已有持仓市值
+        # 注意: 不能用 total_value({symbol: entry_price}) — 新股票尚未持仓,
+        # market_value 会忽略它, 而已有持仓不在 prices 里也不计市值,
+        # 结果只剩现金 → current_exposure 持仓后极易 >100%, 新仓被系统性压缩
+        total_capital = self.cash + existing_mv
         current_exposure = existing_mv / total_capital if total_capital > 0 else 0
         remaining_capacity = max(target_ratio - current_exposure, 0.05)  # 至少留 5% 空间
 

@@ -56,6 +56,7 @@ interface DayResult {
   action: 'NONE' | 'BUY' | 'HOLD' | 'SELL' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'COOLDOWN_BLOCKED'
   entry_price: number | null
   stop_loss_price: number | null
+  take_profit_price: number | null
   trailing_stop_price: number | null
   highest_price: number | null
   holding_pnl_pct: number | null
@@ -356,9 +357,11 @@ export default function StockBacktestPage() {
         if (v == null) return <Text style={{ color: '#475569', fontSize: 12 }}>-</Text>
         const space = ((r.close - v) / r.close * 100).toFixed(1)
         const spaceColor = parseFloat(space) < 3 ? '#ef4444' : '#64748b'
-        const tip = r.trailing_stop_price
-          ? `止损: ${v.toFixed(2)} | 移动止盈: ${r.trailing_stop_price.toFixed(2)} | 最高: ${r.highest_price?.toFixed(2)}`
-          : `止损: ${v.toFixed(2)}`
+        const parts = [`止损: ${v.toFixed(2)}`]
+        if (r.take_profit_price) parts.push(`目标止盈: ${r.take_profit_price.toFixed(2)}`)
+        if (r.trailing_stop_price) parts.push(`移动止盈: ${r.trailing_stop_price.toFixed(2)}`)
+        if (r.highest_price) parts.push(`最高: ${r.highest_price.toFixed(2)}`)
+        const tip = parts.join(' | ')
         return (
           <Tooltip title={tip} overlayStyle={{ maxWidth: 280 }}>
             <Text style={{ color: '#f87171', fontFamily: 'monospace', fontSize: 12 }}>{v.toFixed(2)}</Text>
@@ -563,7 +566,7 @@ export default function StockBacktestPage() {
               onChange={setSelectedCode}
               options={stockOptions}
               filterOption={(input, option) => {
-                const v = option?.value as string
+                const v = (option as { value?: string } | undefined)?.value
                 return v?.toLowerCase().includes(input.toLowerCase()) ?? false
               }}
               disabled={running}

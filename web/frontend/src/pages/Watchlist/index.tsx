@@ -18,11 +18,6 @@ interface StockItem {
   market: string
 }
 
-interface WatchlistGroup {
-  name: string
-  stocks: StockItem[]
-}
-
 export default function WatchlistPage() {
   const { message } = App.useApp()
   const { groups, ungrouped, loading, fetchWatchlist, addStock, removeStock, createGroup, deleteGroup } = useWatchlistStore()
@@ -160,7 +155,7 @@ export default function WatchlistPage() {
     })), [searchResults])
 
   // 股票表格列
-  const stockColumns = (groupName: string) => [
+  const stockColumns = (_groupName: string) => [
     {
       title: '代码',
       dataIndex: 'code',

@@ -129,13 +129,20 @@ def get_group_config(name: str, mode: Optional[str] = Query(None)):
 
 @router.put("/groups/{name}")
 def save_group_config(name: str, data: dict):
+    """保存分组基础配置 (合并语义)
+
+    前端配置页只回传表单字段, 整组替换会静默丢掉 strategy_mode / mean_reversion_exit /
+    description 等未在表单中的关键字段 (机械组轮动、消费组均值回归退出配置会被抹掉),
+    因此按 key 合并: 仅覆盖请求中出现的字段.
+    """
     cfg = _load_config()
     existing = _get_group_config(cfg, name) or {}
 
-    # 保留已有的 presets 不被覆盖
-    data["manual_regime_presets"] = existing.get("manual_regime_presets")
+    merged = {**existing, **data}
+    # presets 由专用接口 (PUT presets/{mode}) 管理, 不被本接口覆盖
+    merged["manual_regime_presets"] = existing.get("manual_regime_presets")
 
-    _set_group_config(cfg, name, data)
+    _set_group_config(cfg, name, merged)
     _save_config(cfg)
     return {"status": "ok", "group_name": name}
 

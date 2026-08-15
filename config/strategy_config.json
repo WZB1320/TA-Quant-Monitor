@@ -914,7 +914,8 @@
               "volume": 0.27
             }
           },
-          "_note": "制造股: 标准参数; 均衡权重; ADX和量能略提升; 不限制ATR/MA20偏离; 动态Ceiling+3"
+          "_note": "制造股: 标准参数; 均衡权重; ADX和量能略提升; 不限制ATR/MA20偏离; 动态Ceiling+3",
+          "manual_regime_presets": null
         }
       }
     },

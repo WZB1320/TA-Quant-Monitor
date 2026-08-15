@@ -87,10 +87,8 @@ def run_backtest(req: BacktestRequest):
         if not all_stocks:
             return {"status": "error", "message": "自选股列表为空"}
 
-        # 清除信号历史文件, 避免上次回测/分析的去重记录影响本次回测
-        _history_file = os.path.join(_PROJECT_ROOT, "data", "signal_history.json")
-        if os.path.exists(_history_file):
-            os.remove(_history_file)
+        # 注意: 不删除 signal_history.json — BACKTEST 模式下 SignalFilter 为纯内存历史,
+        # 不读写该文件; 删除只会摧毁 LIVE 模式积累的跨会话去重数据, 导致实时信号重复触发.
 
         gc = GroupConfig()
 
@@ -146,11 +144,22 @@ def run_backtest(req: BacktestRequest):
         _state["progress"] = 65
 
         # 3. 获取基准数据
-        bench_df = None
+        # 基准获取失败必须直接报错终止, 不能 bench_df=None 继续跑:
+        #   - 机械组轮动策略 rotation.run 内部 bench_df.copy() 对 None 抛 AttributeError,
+        #     会让整个组合回测崩溃;
+        #   - RegimeDetector 失去基准后体制判断失真, 周期组 trade_regimes={trending}
+        #     过滤会错误拦截/放行信号, 回测结果不可信.
         try:
             bench_df = dm.get_daily_kline(req.benchmark, start_date=fetch_start, end_date=end)
         except Exception as e:
             logger.warning("获取基准数据失败: %s", e)
+            bench_df = None
+        if bench_df is None or bench_df.empty:
+            return {
+                "status": "error",
+                "message": f"基准数据获取失败 ({req.benchmark}), 回测已终止: "
+                           "体制判断与轮动策略均依赖基准数据, 请检查网络/数据源后重试",
+            }
 
         # 4. 运行回测引擎 — P5 分组独立回测 + 权重合并
         # 每组独立创建 BacktestEngine, 按PORTFOLIO_WEIGHTS分配资金, 应用差异化配置:
@@ -315,9 +324,9 @@ def run_backtest(req: BacktestRequest):
                 "name": info.get("name", t.symbol),
                 "group": info.get("group", ""),
                 "mode": req.mode,
-                "entry_date": str(t.entry_date),
+                "entry_date": str(t.entry_date)[:10],
                 "entry_price": round(t.entry_price, 3),
-                "exit_date": str(t.exit_date) if t.exit_date else "",
+                "exit_date": str(t.exit_date)[:10] if t.exit_date else "",
                 "exit_price": round(t.exit_price, 3) if t.exit_price else None,
                 "shares": t.shares,
                 "cost": round(t.entry_price * t.shares, 2),
@@ -350,7 +359,7 @@ def run_backtest(req: BacktestRequest):
                     "name": info.get("name", symbol),
                     "group": info.get("group", ""),
                     "mode": req.mode,
-                    "entry_date": str(t.entry_date),
+                    "entry_date": str(t.entry_date)[:10],
                     "entry_price": round(t.entry_price, 3),
                     "exit_date": "",  # 未平仓
                     "exit_price": round(current_price, 3) if current_price else None,

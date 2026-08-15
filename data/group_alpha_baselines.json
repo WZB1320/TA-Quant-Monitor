@@ -1,0 +1,30 @@
+{
+  "_comment": "组级Alpha历史基线库 — quant-claim-verify skill 锚定用. 由独立单组回测 verify_group_alpha.py 生成/更新. Alpha=组收益-同期沪深300收益.",
+  "_date": "2026-08-13",
+  "_note": "窗口定义: train=2024-07~2025-06(震荡), test=2025-07~2026-06(牛市), full=2024-07~2026-06. 消费/医药/机械为均值回归/轮动策略(2026-08-10改), 其余趋势跟踪.",
+  "科技成长型": {
+    "train": {"alpha": 0.0099, "total_return": 0.1416, "sharpe": 0.846, "date": "2026-08-13"},
+    "test": {"alpha": 0.2144, "total_return": 0.4773, "sharpe": 2.238, "date": "2026-08-13"},
+    "full": {"alpha": 0.3500, "total_return": 0.7817, "sharpe": 1.689, "date": "2026-08-13"}
+  },
+  "消费稳健型": {
+    "train": {"alpha": -0.1214, "total_return": 0.0102, "sharpe": -0.215, "date": "2026-08-13"},
+    "test": {"alpha": -0.3398, "total_return": -0.0768, "sharpe": -2.303, "date": "2026-08-13"},
+    "full": {"alpha": -0.4854, "total_return": -0.0538, "sharpe": -1.109, "date": "2026-08-13"}
+  },
+  "周期资源型": {
+    "train": {"alpha": 0.0357, "total_return": 0.1674, "sharpe": 1.003, "date": "2026-08-13"},
+    "test": {"alpha": 0.7061, "total_return": 0.9690, "sharpe": 3.938, "date": "2026-08-13"},
+    "full": {"alpha": 1.0411, "total_return": 1.4727, "sharpe": 2.710, "date": "2026-08-13"}
+  },
+  "医药创新型": {
+    "train": {"alpha": -0.0321, "total_return": 0.0995, "sharpe": 0.889, "date": "2026-08-13"},
+    "test": {"alpha": -0.2700, "total_return": -0.0071, "sharpe": -0.478, "date": "2026-08-13"},
+    "full": {"alpha": -0.3230, "total_return": 0.1086, "sharpe": 0.466, "date": "2026-08-13"}
+  },
+  "机械制造型": {
+    "train": {"alpha": -0.2560, "total_return": -0.1243, "sharpe": -0.627, "date": "2026-08-13"},
+    "test": {"alpha": -0.0997, "total_return": 0.1632, "sharpe": 0.637, "date": "2026-08-13"},
+    "full": {"alpha": -0.3902, "total_return": 0.0414, "sharpe": 0.002, "date": "2026-08-13"}
+  }
+}

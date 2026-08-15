@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Card, Button, Table, Tag, Space, Typography, Row, Col, Progress,
-  Select, Empty, Spin, Tooltip, Radio,
+  Select, Empty, Tooltip, Radio,
 } from 'antd'
 import {
   ThunderboltOutlined, ReloadOutlined, ArrowUpOutlined,
