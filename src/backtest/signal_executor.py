@@ -77,8 +77,8 @@ class SignalExecutor:
             open_price = next_info["open"]
             prev_close = next_info["prev_close"]
 
-            # 涨跌停检查
-            if not self.broker.can_trade(open_price, prev_close):
+            # 涨跌停检查 (按板块自动推断涨跌停幅度, 如创业板/科创板20%)
+            if not self.broker.can_trade(open_price, prev_close, symbol=symbol):
                 continue
 
             if result.level.is_bullish:
@@ -97,10 +97,13 @@ class SignalExecutor:
             return
 
         # MA60 执行日重验证: 信号日MA60多头, 但执行日可能已转空
+        # 前视偏差修复: 成交在执行日(next_date)开盘价, 此时只能用到
+        # 执行日之前(含前一日)的数据, 不能包含执行日当天的收盘价.
+        # 故切片取 iloc[:exec_idx] (执行日之前的所有K线), 而非 iloc[:exec_idx+1].
         exec_idx = self.calendar.locate(symbol, next_date)
         exec_atr = None
         if exec_idx is not None and exec_idx >= 60:
-            exec_df = df.iloc[:exec_idx + 1]
+            exec_df = df.iloc[:exec_idx]
             try:
                 exec_ind = self.signal_engine.pipeline.run(exec_df)
                 exec_ma60 = exec_ind.get("MA60")
@@ -157,11 +160,12 @@ class SignalExecutor:
                 self.signal_engine.filter.record_loss(symbol, next_date)
 
     def flush(self, pending_signals: Dict, data_map: Dict[str, pd.DataFrame]) -> None:
-        """回测结束时, 把最后一天未执行的信号执行掉"""
-        if not pending_signals:
-            return
-        pending_keys = sorted(pending_signals.keys())
-        if len(pending_keys) >= 1:
-            last_date = pending_keys[-1]
-            self.execute(pending_signals[last_date], data_map, last_date)
-            pending_signals.clear()
+        """回测结束时清理待处理信号
+
+        边界修复: 主循环已对每一天执行其前一日(T)产生的信号(T+1开盘价成交)。
+        仅在回测区间内最后一天生成的信号, 其 T+1 执行日已超出 bt_end,
+        没有合法的成交窗口, 不应在区间外开仓。此前直接以"执行日之后"的
+        开盘价开仓并把仓位计入期末净值, 会扭曲回测结果。这里统一丢弃,
+        不执行任何越界信号。
+        """
+        pending_signals.clear()
