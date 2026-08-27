@@ -18,6 +18,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
+from .storage import atomic_write_json, safe_load_json
+
 router = APIRouter(prefix="/api/config", tags=["配置"])
 
 CONFIG_PATH = os.path.join(
@@ -34,13 +36,19 @@ PRESET_KEYS = [
 
 
 def _load_config() -> dict:
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    # 容错读取: 文件损坏/缺失时返回空配置而非 500
+    return safe_load_json(CONFIG_PATH, {})
 
 
 def _save_config(data: dict):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    # 原子写: 避免并发/中断截断文件
+    atomic_write_json(CONFIG_PATH, data)
+    # 配置已落盘, 触发 GroupConfig 单例热更新, 无需重启后端
+    try:
+        from src.config.group_config import GroupConfig
+        GroupConfig().reload()
+    except Exception:
+        pass
 
 
 def _get_group_config(cfg: dict, name: str) -> dict | None:

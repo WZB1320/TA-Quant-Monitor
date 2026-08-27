@@ -72,6 +72,23 @@ class GroupConfig:
 
         self._loaded = True
 
+    @classmethod
+    def reset(cls):
+        """销毁单例, 下次访问重新创建 (供测试/强制刷新使用)"""
+        cls._instance = None
+
+    def reload(self):
+        """重新从磁盘读取配置, 实现热更新.
+
+        配置经 PUT /api/config 修改后调用: 引擎持有的是同一个单例引用,
+        原地重新读取即可让新参数在下一次读取时生效, 无需重启后端.
+
+        注意: 此前 backtest 路由用 `GroupConfig._instance = None` 试图重置,
+        但路由内持有的 gc 仍是旧实例引用, 该重置是死代码. 应改用本方法.
+        """
+        self._loaded = False
+        self._load()
+
     def get_group(self, code: str) -> str:
         """获取股票所属分组名"""
         self._load()
@@ -113,6 +130,11 @@ class GroupConfig:
     def _merge_preset(self, code: str, group_config: dict) -> dict:
         """将手动模式预设合并到分组配置中"""
         self._load()
+        # 回测模式下忽略用户手动体制选择: 否则回测会读取实盘 user_preferences.json
+        # 的手动体制, 破坏可复现性并污染回测结果 (runtime_mode 隔离不完整).
+        from src.config.runtime_mode import is_backtest
+        if is_backtest():
+            return group_config
         group_name = self._code_to_group.get(code)
         if not group_name:
             return group_config

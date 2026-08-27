@@ -24,6 +24,7 @@ if _PROJECT_ROOT not in sys.path:
 
 from src.config.settings import WATCHLIST_FILE, DATA_DIR
 from services.knowledge_base import KnowledgeBase
+from .storage import atomic_write_json, safe_load_json
 
 logger = logging.getLogger(__name__)
 
@@ -36,34 +37,31 @@ _CONFIG_FILE = os.path.join(_PROJECT_ROOT, "config", "strategy_config.json")
 # ── 文件读写工具 ──
 
 def _load_watchlist() -> list:
-    """读取 watchlist.json 的 stocks 列表"""
-    if not os.path.exists(WATCHLIST_FILE):
-        return []
-    with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data.get("stocks", [])
+    """读取 watchlist.json 的 stocks 列表 (容错: 损坏返回空列表)"""
+    return safe_load_json(WATCHLIST_FILE, {}).get("stocks", [])
 
 
 def _save_watchlist(stocks: list):
-    """写入 watchlist.json"""
+    """写入 watchlist.json (原子写)"""
     os.makedirs(os.path.dirname(WATCHLIST_FILE), exist_ok=True)
-    with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
-        json.dump({"stocks": stocks}, f, ensure_ascii=False, indent=2)
+    atomic_write_json(WATCHLIST_FILE, {"stocks": stocks})
 
 
 def _load_config() -> dict:
-    """读取 strategy_config.json"""
-    if not os.path.exists(_CONFIG_FILE):
-        return {"strategy_config": {}}
-    with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """读取 strategy_config.json (容错: 损坏返回空壳)"""
+    return safe_load_json(_CONFIG_FILE, {"strategy_config": {}})
 
 
 def _save_config(config: dict):
-    """写入 strategy_config.json"""
+    """写入 strategy_config.json (原子写)"""
     os.makedirs(os.path.dirname(_CONFIG_FILE), exist_ok=True)
-    with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    atomic_write_json(_CONFIG_FILE, config)
+    # 自选股变更会影响分组映射, 触发 GroupConfig 热更新
+    try:
+        from src.config.group_config import GroupConfig
+        GroupConfig().reload()
+    except Exception:
+        pass
 
 
 def _get_group_watchlist(config: dict) -> dict:

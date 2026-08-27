@@ -201,9 +201,10 @@ def run_backtest(req: BacktestRequest):
 
             _state["progress_text"] = f"执行回测引擎: {group_name} ({idx+1}/{len(active_groups)})..."
 
-            # 重置 GroupConfig 单例, 避免多次 run() 之间状态残留
-            GroupConfig._instance = None
-            GroupConfig._config = None
+            # 重新从磁盘读取分组配置(热更新): 配置经 API 修改后无需重启后端即可生效.
+            # 注: 此前用 `GroupConfig._instance = None` 重置是死代码(gc 仍是旧实例引用),
+            # 改用 reload() 原地刷新同一单例, 使下方读取的分组参数真实生效.
+            gc.reload()
 
             # 读取该组的策略配置
             group_cfg = gc._groups.get(group_name, {})
