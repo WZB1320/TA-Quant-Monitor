@@ -18,7 +18,17 @@ class MarketFilter:
         Args:
             benchmark_df: 基准指数日线 (需含 date, close 列)
         """
+        import logging
+        self._logger = logging.getLogger(__name__)
         self._trend_map: Dict[date, int] = self._compute(benchmark_df) if benchmark_df is not None else {}
+        # 基准数据不足(行数<60或缺列)时无法计算 MA60, 大盘保护整体失效.
+        # 此前 is_bearish 默认按"多头"处理, 会静默放行所有开仓. 这里显式告警,
+        # 避免熊市保护在无数据时悄悄失效而用户无感知.
+        if benchmark_df is not None and not self._trend_map:
+            self._logger.warning(
+                "MarketFilter: 基准数据不足(需>=60个交易日)或无 close 列, "
+                "大盘 MA60 保护失效, 回测将按未知体制处理(不开空仓保护)."
+            )
 
     @staticmethod
     def _compute(benchmark_df: pd.DataFrame) -> Dict[date, int]:
@@ -51,12 +61,17 @@ class MarketFilter:
         return result
 
     def is_bearish(self, target_date) -> bool:
-        """指定日期大盘是否空头 (close < MA60)"""
+        """指定日期大盘是否空头 (close < MA60)
+
+        未知日期(基准数据缺失/未覆盖)返回 False(不开空仓保护), 但语义上
+        是"未知"而非"确认多头", 与 get_direction 的 0 保持一致; 真正的
+        失效已在 __init__ 处告警. 此前的默认 1(假设多头)会静默放行所有开仓.
+        """
         if isinstance(target_date, pd.Timestamp):
             target_date = target_date.date()
         elif isinstance(target_date, str):
             target_date = pd.Timestamp(target_date).date()
-        return self._trend_map.get(target_date, 1) == -1
+        return self._trend_map.get(target_date, 0) == -1
 
     def get_direction(self, target_date) -> int:
         """获取指定日期的大盘趋势方向: 1 多头 / -1 空头 / 0 未知"""

@@ -86,8 +86,8 @@ class DataManager:
             start_dt = datetime.now() - timedelta(days=DEFAULT_LOOKBACK_DAYS)
             start_date = start_dt.strftime("%Y-%m-%d")
 
-        # Step 1: 查缓存
-        cached = self.cache.load(symbol, start_date, end_date)
+        # Step 1: 查缓存 (按复权方式隔离)
+        cached = self.cache.load(symbol, start_date, end_date, adjust)
         if cached is not None and not cached.empty:
             # 缓存新鲜度: 末条日期须覆盖 <= end_date 的最后一个预期交易日.
             # 旧规则 (end - last).days <= 2 在收盘后当天分析时, 昨日缓存间隔仅1天
@@ -109,8 +109,8 @@ class DataManager:
             try:
                 result = source.get_daily_kline(symbol, start_date, end_date, adjust)
                 if result is not None and not result.empty:
-                    # 写入缓存
-                    self.cache.save(symbol, result)
+                    # 写入缓存 (记录复权方式)
+                    self.cache.save(symbol, result, adjust)
                     return result
                 errors.append(f"{source_name}: returned empty")
             except Exception as e:

@@ -105,7 +105,12 @@ class RSIIndicator(BaseIndicator):
         for i in range(period + 1, len(data)):
             avg_gain[i] = (avg_gain[i - 1] * (period - 1) + gain[i]) / period
             avg_loss[i] = (avg_loss[i - 1] * (period - 1) + loss[i]) / period
-        rs = np.divide(avg_gain, avg_loss + 1e-10)
+        # 平盘保护: 长期停牌/一字板等无涨跌波动时 avg_gain 与 avg_loss 均为 0,
+        # 直接相除会得到 rs=0 → RSI=0(误判极度超卖, 易触发假"超卖反弹"买入).
+        # 此时应返回中性 50 而非 0. 用 1e-10 兜底避免除零, 仅在两者皆 0 时给 rs=1.
+        both_zero = (avg_gain == 0) & (avg_loss == 0)
+        rs = np.divide(avg_gain, avg_loss + 1e-10, out=np.ones_like(avg_gain))
+        rs = np.where(both_zero, 1.0, rs)
         return 100 - 100 / (1 + rs)
 
     @staticmethod

@@ -21,10 +21,12 @@ class KLineCache:
 
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
+            # 首次运行: 建表 (含 adjust 复权维度)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS kline_cache (
                     symbol TEXT NOT NULL,
                     date TEXT NOT NULL,
+                    adjust TEXT NOT NULL DEFAULT 'qfq',
                     open REAL,
                     high REAL,
                     low REAL,
@@ -32,12 +34,19 @@ class KLineCache:
                     volume REAL,
                     amount REAL,
                     updated_at TEXT DEFAULT (datetime('now')),
-                    PRIMARY KEY (symbol, date)
+                    PRIMARY KEY (symbol, date, adjust)
                 )
             """)
+            # 迁移: 旧表无 adjust 维度时, 用 ALTER 加列保留存量数据
+            # (严禁 DROP 重建, 会清空缓存; 缓存重建需远程拉取, 离线环境会丢数据)
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(kline_cache)")]
+            if "adjust" not in cols:
+                conn.execute(
+                    "ALTER TABLE kline_cache ADD COLUMN adjust TEXT NOT NULL DEFAULT 'qfq'"
+                )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_symbol_date ON kline_cache(symbol, date)")
 
-    def save(self, symbol: str, df: pd.DataFrame) -> int:
+    def save(self, symbol: str, df: pd.DataFrame, adjust: str = "qfq") -> int:
         """保存K线数据到缓存，返回写入行数"""
         if df is None or df.empty:
             return 0
@@ -48,11 +57,12 @@ class KLineCache:
             for row in rows:
                 conn.execute(
                     """INSERT OR REPLACE INTO kline_cache
-                       (symbol, date, open, high, low, close, volume, amount, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+                       (symbol, date, adjust, open, high, low, close, volume, amount, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
                     (
                         symbol,
                         str(row.get("date", "")),
+                        adjust,
                         row.get("open"),
                         row.get("high"),
                         row.get("low"),
@@ -65,11 +75,12 @@ class KLineCache:
         return count
 
     def load(
-        self, symbol: str, start_date: str = None, end_date: str = None
+        self, symbol: str, start_date: str = None, end_date: str = None,
+        adjust: str = "qfq",
     ) -> Optional[pd.DataFrame]:
-        """从缓存加载K线数据"""
-        query = "SELECT date, open, high, low, close, volume, amount FROM kline_cache WHERE symbol = ?"
-        params = [symbol]
+        """从缓存加载K线数据 (按复权方式隔离, 避免不同 adjust 命中错误缓存)"""
+        query = "SELECT date, open, high, low, close, volume, amount FROM kline_cache WHERE symbol = ? AND adjust = ?"
+        params = [symbol, adjust]
 
         if start_date:
             query += " AND date >= ?"

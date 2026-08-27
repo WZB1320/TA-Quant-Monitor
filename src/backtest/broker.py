@@ -59,19 +59,36 @@ class Broker:
 
     # ── 涨跌停检查 ──
 
+    @staticmethod
+    def get_limit_pct(symbol: str) -> float:
+        """根据股票代码推断涨跌停幅度 (主板10%, 创业板/科创板20%, 北交所30%)"""
+        if not symbol:
+            return 0.10
+        s = str(symbol)
+        if s.startswith(("688", "689")):
+            return 0.20  # 科创板
+        if s.startswith("3"):
+            return 0.20  # 创业板
+        if s.startswith(("8", "4")):
+            return 0.30  # 北交所
+        return 0.10  # 沪深主板
+
     def can_trade(self, open_price: float, prev_close: float,
-                  limit_pct: float = 0.10) -> bool:
+                  limit_pct: float = 0.10, symbol: str = None) -> bool:
         """
         检查是否能成交 (非一字涨跌停)
 
         Args:
             open_price: 当日开盘价
             prev_close: 前日收盘价
-            limit_pct: 涨跌停幅度 (默认10%)
+            limit_pct: 涨跌停幅度 (默认10%, 可由 symbol 自动推断)
+            symbol: 股票代码, 提供时按板块自动覆盖 limit_pct (科创板/创业板20%, 北交所30%)
 
         Returns:
             True 可交易, False 一字板无法成交
         """
+        if symbol is not None:
+            limit_pct = self.get_limit_pct(symbol)
         limit_up = prev_close * (1 + limit_pct)
         limit_down = prev_close * (1 - limit_pct)
         # 一字板 (开盘即涨停或跌停)
