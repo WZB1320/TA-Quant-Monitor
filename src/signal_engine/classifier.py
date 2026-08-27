@@ -288,12 +288,14 @@ class SignalClassifier:
     def _apply_direction_constraint(self, level: SignalLevel,
                                     material: ClassificationInput) -> Tuple[SignalLevel, str]:
         """
-        MA60方向约束 — 多空区域与信号方向相反时直接降为观望
+        MA60方向约束 — 多空区域与信号方向相反时平滑降级一档
 
-        原逻辑恢复:
-          - 看多信号在MA60空头区域 → 直接降为观望(不买入)
-          - 看空信号在MA60多头区域 → 直接降为观望(不卖出)
-          - MA60为滞后指标, 方向相反时代表趋势不支撑, 应硬性过滤
+        设计 (MA60方向约束修复): 不直接砍到观望, 而是降一档,
+        避免过激压制信号 (与"信号被吞"问题相关):
+          - 强买入在MA60空头区域 → 买入
+          - 强卖出在MA60多头区域 → 卖出
+          - 弱买入在MA60空头区域 → 观望 (再降一档)
+          - 弱卖出在MA60多头区域 → 观望
 
         均值回归模式跳过: 允许在空头区域买入超卖反弹, 多头区域卖出超买回落.
         """
@@ -306,13 +308,17 @@ class SignalClassifier:
         if ma60 is None:
             return level, ""
 
-        # 看多信号在MA60空头区域 → 直接降为观望
+        # 看多信号在MA60空头区域 → 降一档(平滑降级, 不砍观望)
         if ma60.direction == -1 and level.is_bullish:
-            return SignalLevel.NEUTRAL, "价格在MA60下方(空头区域)→观望"
+            demoted = self._demote_one_step(level)
+            reason = f"MA60下方(空头区域):{level.label}→{demoted.label}"
+            return demoted, reason
 
-        # 看空信号在MA60多头区域 → 直接降为观望
+        # 看空信号在MA60多头区域 → 降一档
         if ma60.direction == 1 and level.is_bearish:
-            return SignalLevel.NEUTRAL, "价格在MA60上方(多头区域)→观望"
+            demoted = self._demote_one_step(level)
+            reason = f"MA60上方(多头区域):{level.label}→{demoted.label}"
+            return demoted, reason
 
         return level, ""
 

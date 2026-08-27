@@ -131,26 +131,28 @@ def _make_stock(n: int = 200, seed: int = 7,
 # ─────────────────────────────────────────────────────────
 
 @pytest.fixture
-def backtest_env():
-    """构造完整回测环境: 基准 + 个股 + 引擎"""
+def backtest_env(tmp_path):
+    """构造完整回测环境: 基准 + 个股 + 引擎
+
+    测试隔离: 将 SignalFilter 的去重文件路径重定向到临时目录,
+    避免删除/污染真实 data/signal_history.json (LIVE 模式实盘记忆)。
+    BACKTEST 模式本身使用内存历史, 不读写磁盘。
+    """
     # 确保回测模式
     set_mode(RuntimeMode.BACKTEST)
     assert get_mode() == RuntimeMode.BACKTEST
+
+    # 重定向去重文件到临时目录, 保证测试绝不触碰真实磁盘数据
+    from src.signal_engine import filter as filter_module
+    original_dedup_file = filter_module._DEDUP_FILE
+    tmp_dedup_file = str(tmp_path / "signal_history.json")
+    filter_module._DEDUP_FILE = tmp_dedup_file
 
     benchmark = _make_benchmark(n=200, seed=42)
     stock_a = _make_stock(n=200, seed=7, trend_start=60, trend_end=100)
     stock_b = _make_stock(n=200, seed=99, trend_start=120, trend_end=160)
 
     data_map = {"STOCK_A": stock_a, "STOCK_B": stock_b}
-
-    # 清除可能存在的信号历史文件 (测试隔离)
-    from src.signal_engine.filter import _DEDUP_FILE
-    history_existed = os.path.exists(_DEDUP_FILE)
-    history_content = None
-    if history_existed:
-        with open(_DEDUP_FILE, "r") as f:
-            history_content = f.read()
-        os.remove(_DEDUP_FILE)
 
     yield {
         "benchmark": benchmark,
@@ -159,14 +161,8 @@ def backtest_env():
         "stock_b": stock_b,
     }
 
-    # 恢复原始信号历史文件
-    if history_existed:
-        os.makedirs(os.path.dirname(_DEDUP_FILE), exist_ok=True)
-        with open(_DEDUP_FILE, "w") as f:
-            f.write(history_content)
-    elif os.path.exists(_DEDUP_FILE):
-        # 回测不应写盘, 如果文件被创建则删除
-        os.remove(_DEDUP_FILE)
+    # 恢复原始去重文件路径 (临时文件随 tmp_path 自动清理)
+    filter_module._DEDUP_FILE = original_dedup_file
 
 
 # ─────────────────────────────────────────────────────────

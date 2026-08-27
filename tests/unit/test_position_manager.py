@@ -158,11 +158,11 @@ class TestClosePosition:
 # ── 止损止盈 (核心风控) ──
 
 class TestStopLoss:
-    def test_hard_stop_10pct_triggers(self, pm):
-        """10% 硬止损必须触发 (安全网)"""
+    def test_hard_stop_12pct_triggers(self, pm):
+        """12% 安全网硬止损必须触发 (P3: 10%→12%)"""
         pm.open_long("TEST", date(2026, 1, 1), 10.0, "BUY", atr_value=0.5)
-        # 价格跌到 8.99 (-10.1%) → 必须触发安全网
-        result = pm.check_stop_loss("TEST", 8.99, date(2026, 1, 5))
+        # 价格跌到 8.78 (-12.2%) → 触发安全网 (阈值 8.80; ATR硬止损线 8.75 在更下方, 不抢先)
+        result = pm.check_stop_loss("TEST", 8.78, date(2026, 1, 5))
         assert result is not None
         assert "安全网" in result.exit_signal
 
@@ -208,20 +208,19 @@ class TestStopLoss:
         assert result is None
 
     def test_trailing_stop_profit_gt_20pct(self, pm):
-        """盈利>20% 时移动止盈倍率收紧到 1.5×ATR (2.5×0.6)
+        """盈利>20% 后回落触发 ATR 移动止盈
 
-        关键: profit_pct 用 current_price 计算, 不是 highest_price。
-        要触发 >20% 档, current_price 也要 > entry×1.2 = 12.0。
-        流程: 开仓 → 推高最高价到 13.0 (+30%) → 回落到 12.1 (+21%, 仍>20%)
-        移动止盈线 = highest - 1.5×ATR = 13.0 - 0.75 = 12.25
-        价格 12.1 < 12.25 且 profit 21% > 20% → 触发
+        pm: atr_stop_mult=2.5, atr_value=0.5
+        流程: 开仓→推高到 13.0(+30%, 高位档 trailing_dist=0.5×2.5×1.0=1.25, 线11.75, 不触发)
+              →回落到 11.1(+11%, 进入10~20%档 trailing_dist=0.5×2.5×1.5=1.875, 线11.125)
+              11.1<11.125 → 触发 ATR移动止盈
         """
         pm.open_long("TEST", date(2026, 1, 1), 10.0, "BUY", atr_value=0.5)
         # 第1天: 推高最高价到 13.0 (+30%), 不触发 (无回撤)
         r1 = pm.check_stop_loss("TEST", 13.0, date(2026, 1, 10))
         assert r1 is None
-        # 第2天: 回落到 12.1 (+21%, 仍>20%), 12.1 < 12.25 → 触发
-        result = pm.check_stop_loss("TEST", 12.1, date(2026, 1, 11))
+        # 第2天: 回落到 11.1 (+11%, 进入10~20%档), 11.1 < 11.125 → 触发
+        result = pm.check_stop_loss("TEST", 11.1, date(2026, 1, 11))
         assert result is not None
         assert "ATR移动止盈" in result.exit_signal
 
@@ -258,18 +257,16 @@ class TestStopLoss:
     def test_trailing_stop_10_to_20pct_triggers(self, pm):
         """盈利 10~20% 档移动止盈触发
 
-        profit_pct > 0.10 是严格大于。
-        用小 ATR 让 threshold 在 current 之上:
-        - ATR=0.3, trailing_mult=2.0 (10~20% 档), trailing_dist=0.6
-        - highest=12.0, threshold = 12.0 - 0.6 = 11.4
-        - current=11.1, profit=11% > 10% (在 10~20% 档), 11.1 < 11.4 → 触发
+        pm: atr_stop_mult=2.5, atr_value=0.2
+        流程: 开仓→推高到 12.0(+20%, 10~20%档 trailing_dist=0.2×2.5×1.5=0.75, 线11.25, 不触发)
+              →回落到 11.2(+12%, 仍在10~20%档) 11.2<11.25 → 触发 ATR移动止盈
         """
-        pm.open_long("TEST", date(2026, 1, 1), 10.0, "BUY", atr_value=0.3)
+        pm.open_long("TEST", date(2026, 1, 1), 10.0, "BUY", atr_value=0.2)
         pm.check_stop_loss("TEST", 12.0, date(2026, 1, 10))  # highest=12.0
-        # current=11.1, profit=11% > 10% (在 10~20% 档)
-        # threshold = 12.0 - 2.0×0.3 = 11.4
-        # 11.1 < 11.4 → 触发
-        result = pm.check_stop_loss("TEST", 11.1, date(2026, 1, 11))
+        # current=11.2, profit=12% (在 10~20% 档)
+        # threshold = 12.0 - 0.2×2.5×1.5 = 11.25
+        # 11.2 < 11.25 → 触发
+        result = pm.check_stop_loss("TEST", 11.2, date(2026, 1, 11))
         assert result is not None
         assert "ATR移动止盈" in result.exit_signal
 
@@ -295,10 +292,10 @@ class TestStopLoss:
         assert trade.highest_price == 11.0
 
     def test_no_atr_falls_back_to_fixed_pct(self, pm):
-        """无 ATR 时回退到固定百分比止损"""
+        """无 ATR 时回退到固定百分比硬止损 (P3: 10%→12%)"""
         pm.open_long("TEST", date(2026, 1, 1), 10.0, "BUY", atr_value=None)
-        # 无 ATR, 10% 硬止损
-        result = pm.check_stop_loss("TEST", 8.99, date(2026, 1, 5))
+        # 无 ATR, 12% 硬止损 (阈值 8.80)
+        result = pm.check_stop_loss("TEST", 8.78, date(2026, 1, 5))
         assert result is not None
         assert "硬止损" in result.exit_signal
 
