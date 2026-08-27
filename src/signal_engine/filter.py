@@ -308,9 +308,12 @@ class SignalFilter:
                 return SignalLevel.NEUTRAL, "价格在MA60上方(多头区域)，不发看空信号"
 
         # 最低得分阈值 (分组专属)
+        # 与 classifier v2 保持一致: BUY 及以上(abs(value)>=2)为结构共振信号,
+        # 得分门槛不砍, 仅 WEAK_BUY 需得分确认. 否则 BUY 会被此处二次降级为观望,
+        # 与 classifier._apply_score_gate 的逻辑矛盾(双路径冲突).
         score = indicator_results.get("SCORE")
         st = group_params.get("score_threshold", score_threshold)
-        if score is not None and abs(score) < st:
+        if score is not None and abs(level.value) < 2 and abs(score) < st:
             return SignalLevel.NEUTRAL, f"得分{score:.1f}低于阈值{st}"
 
         # ── 第1层: 过热信号拦截 (动态Ceiling: 突破确认+均线排列加成) ──
