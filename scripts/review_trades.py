@@ -3,9 +3,11 @@
 找出亏损共性原因，提出优化建议
 """
 import os, sys
-json_path = "data/signal_history.json"
-if os.path.exists(json_path):
-    os.remove(json_path)
+
+# 修复: 此前启动即删除 data/signal_history.json, 会摧毁 LIVE 模式实盘去重数据.
+# 改为回测模式运行(内存去重, 不读写磁盘), 既不污染实盘, 又保证可复现.
+from src.config.runtime_mode import set_mode, RuntimeMode
+set_mode(RuntimeMode.BACKTEST)
 
 from src.data_fetcher import DataManager, Watchlist
 from src.backtest import BacktestEngine
@@ -56,12 +58,10 @@ for i, t in enumerate(trades):
         df_entry = df.iloc[:entry_idx + 1].copy()
         ind_entry = pipeline.run(df_entry)
 
-        # 重新生成买入信号
-        os.remove(json_path) if os.path.exists(json_path) else None
+        # 注意: 本脚本已在顶部 set_mode(BACKTEST), SignalEngine 使用内存去重,
+        # 不读写磁盘, 因此无需 (也绝不应) 删除 data/signal_history.json.
+        # 下方仅做指标复盘, 不再重建信号, 避免误删实盘去重数据.
         sig_entry = SignalEngine(dedup_days=5)
-        # 模拟信号生成 (需要确定何时产生了该买入信号)
-        # 买入信号在 t.entry_date 前一天产生 (T+1)
-        # 逆向找: 在 entry_date-1 那一天产生了买入信号
 
     print(f"\n{'─' * 80}")
     print(f"  交易 #{i+1}: {t.symbol}  |  {t.entry_signal}")

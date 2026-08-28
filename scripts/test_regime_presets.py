@@ -68,12 +68,12 @@ print()
 # ── 跑三组测试 ──
 results = {}
 
+# 修复: 此前每个预设都删除 data/signal_history.json, 会摧毁 LIVE 模式实盘去重数据.
+# 改为回测模式运行(内存去重, 不读写磁盘), 每次测试去重状态干净且互不污染.
+from src.config.runtime_mode import set_mode, RuntimeMode
+set_mode(RuntimeMode.BACKTEST)
+
 for label, preset in PRESETS.items():
-    # 清除历史信号文件
-    hist_file = os.path.join("data", "signal_history.json")
-    if os.path.exists(hist_file):
-        os.remove(hist_file)
-    
     # 创建独有的 GroupConfig 覆盖方法
     import src.config.group_config as gc_mod
     from src.config.group_config import GroupConfig

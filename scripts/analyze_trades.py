@@ -1,8 +1,11 @@
 """逐笔交易信号详情分析"""
 import os, json
-json_path = "data/signal_history.json"
-if os.path.exists(json_path):
-    os.remove(json_path)
+
+# 修复: 此前脚本启动即删除 data/signal_history.json, 会摧毁 LIVE 模式积累的信号
+# 去重/冷却数据. 分析脚本应运行在回测模式(内存去重, 不读写磁盘), 既不污染实盘
+# 数据, 又能保证每次运行去重状态干净可复现.
+from src.config.runtime_mode import set_mode, RuntimeMode
+set_mode(RuntimeMode.BACKTEST)
 
 from src.data_fetcher import DataManager, Watchlist
 from src.backtest import BacktestEngine
