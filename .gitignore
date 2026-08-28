@@ -33,3 +33,7 @@ dist-ssr/
 # Env
 .env
 .env.local
+
+# Runtime artifacts & agent memory
+data/backtest_memory/
+.workbuddy/
