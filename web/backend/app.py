@@ -32,6 +32,7 @@ from routers.config import router as config_router
 from routers.backtest import router as backtest_router
 from routers.stock_backtest import router as stock_backtest_router
 from routers.ai_report import router as ai_report_router
+from routers.dashboard import router as dashboard_router
 from services.knowledge_base import KnowledgeBase
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
@@ -82,6 +83,7 @@ app.include_router(config_router)
 app.include_router(backtest_router)
 app.include_router(stock_backtest_router)
 app.include_router(ai_report_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/api/health", tags=["系统"])
