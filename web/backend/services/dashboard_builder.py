@@ -133,22 +133,77 @@ def run_signals(on_progress: Optional[Callable[[int, str], None]] = None) -> dic
 
 # ── 4. 组装快照 ──
 def _attach_chg_pct(rows: list, dm: DataManager, data_date: str) -> None:
-    """为信号行补当日涨跌幅（取自缓存，窄区间查询命中已缓存数据）。"""
+    """为信号行补当日涨跌幅（取自缓存，窄区间查询命中已缓存数据）。
+
+    无法计算时置 None（前端渲染「—」）——置 0 会被误读成「当日持平」。
+    """
     start = (datetime.strptime(data_date, "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
     for r in rows:
         df = dm.get_daily_kline(r["code"], start_date=start, end_date=data_date)
         if df is not None and len(df) >= 2:
             c = df["close"].astype(float)
             prev = float(c.iloc[-2])
-            r["chg_pct"] = round((float(c.iloc[-1]) / prev - 1) * 100, 2) if prev else 0.0
+            r["chg_pct"] = round((float(c.iloc[-1]) / prev - 1) * 100, 2) if prev else None
         else:
-            r["chg_pct"] = 0.0
+            r["chg_pct"] = None
+
+
+def _append_missing_rows(rows: list, sig_res: dict, held_codes: set,
+                         watchlist_stocks: Optional[list] = None) -> int:
+    """补全自选股中未产出信号的行并标注原因（需求: 35 只不漏不折叠 + 数据缺失不隐藏）。
+
+    行缺失的两种成因（信号分析 `data_map` 只收历史样本 >=120 根的标的）:
+      1. 所属分组已暂停（组合权重=0）→ 该组本次不生成信号
+      2. 历史样本不足（<120 根 / 拉取失败）
+    补出的行 level=MISSING，不参与等级排序加权（rank 0，自然沉到最末）。
+
+    watchlist_stocks: 自选股全量；None 时读取 data/watchlist.json（测试可注入）。
+    """
+    from src.config.group_config import GroupConfig
+
+    if watchlist_stocks is None:
+        from src.data_fetcher.watchlist import Watchlist
+        try:
+            watchlist_stocks = Watchlist().get_all()
+        except Exception as e:
+            logger.warning("读取自选股失败，跳过缺失行补全: %s", e)
+            return 0
+
+    have = {r["code"] for r in rows}
+    paused_skipped = sig_res.get("paused_skipped") or {}
+    gc = GroupConfig()
+    added = 0
+    for s in watchlist_stocks:
+        code = s["code"]
+        if code in have:
+            continue
+        group = (gc.get_group(code) if gc else "") or ""
+        if group in paused_skipped:
+            reason = f"分组「{group}」已暂停（组合权重=0），本次不生成信号"
+        else:
+            reason = "历史样本不足 120 个交易日或数据获取失败"
+        rows.append({
+            "code": code, "name": s.get("name") or code, "group": group,
+            "close": None, "chg_pct": None,
+            "level": "MISSING", "label": "数据缺失", "score": None,
+            "execution": {"executable": False, "status": "数据缺失", "reason": reason},
+            "held": code in held_codes, "indicators": {}, "missing": True,
+        })
+        added += 1
+    if added:
+        logger.warning("信号表补入 %d 行数据缺失占位: %s", added,
+                       [r["code"] for r in rows if r.get("missing")])
+    return added
 
 
 def build_snapshot(data_date: str, dm: DataManager, indices: list, sig_res: dict,
                    bt_res: dict, t_start: float,
-                   on_progress: Optional[Callable[[int, str], None]] = None) -> dict:
-    """由回测/信号结果 + 指数带组装大屏快照 JSON。"""
+                   on_progress: Optional[Callable[[int, str], None]] = None,
+                   watchlist_stocks: Optional[list] = None) -> dict:
+    """由回测/信号结果 + 指数带组装大屏快照 JSON。
+
+    watchlist_stocks: 自选股全量（用于补齐缺失行）；None 时读取 watchlist.json。
+    """
     def _p(p: int, s: str = "") -> None:
         if on_progress:
             on_progress(p, s)
@@ -170,10 +225,11 @@ def build_snapshot(data_date: str, dm: DataManager, indices: list, sig_res: dict
             "indicators": r.get("indicators", {}),
         })
     _attach_chg_pct(rows, dm, data_date)
-    # 实际枚举: NEUTRAL=0（非 HOLD）
+    n_missing = _append_missing_rows(rows, sig_res, held_codes, watchlist_stocks)
+    # 实际枚举: NEUTRAL=0（非 HOLD）；MISSING 未入表 → rank 0，沉到最末
     level_rank = {"STRONG_BUY": 7, "BUY": 6, "WEAK_BUY": 5, "NEUTRAL": 4,
                   "WEAK_SELL": 3, "SELL": 2, "STRONG_SELL": 1}
-    rows.sort(key=lambda x: (level_rank.get(x["level"], 0), x["score"]), reverse=True)
+    rows.sort(key=lambda x: (level_rank.get(x["level"], 0), x["score"] or 0), reverse=True)
 
     # 持仓行（策略模拟持仓; 现价取回测末日常规收盘价）
     total_cost = 0.0
@@ -226,7 +282,10 @@ def build_snapshot(data_date: str, dm: DataManager, indices: list, sig_res: dict
         "param_fixed_date": PARAM_FIXED_DATE,
         "initial_capital": CAP,
         "indices": indices,
-        "signals": {"summary": sig_res["summary"], "rows": rows},
+        "signals": {
+            "summary": {**sig_res["summary"], "missing": n_missing, "total": len(rows)},
+            "rows": rows,
+        },
         "positions": {
             "count": len(pos_rows),
             "position_pct": position_pct,
@@ -336,8 +395,10 @@ def generate(force: bool = True, on_progress: Optional[Callable[[int, str], None
     _state.update({"state": "running", "stage": "初始化", "progress": 0,
                    "error": None, "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "finished_at": None})
-    # 生成期使用 BACKTEST 模式: 信号过滤器走纯内存历史, 不写 signal_history.json,
-    # 避免污染实盘信号去重记录（与 demo 一致）
+    # 生成期使用 BACKTEST 模式: 信号过滤器走纯内存历史, 不写 data/signal_history.json,
+    # 避免清空/污染实盘信号去重记录（与 demo 一致）。
+    # 注意: 策略记忆层不受此开关控制 — SignalAnalyzer 内部固定 StrategyMemory(source="live")，
+    # 因此每次生成仍会向 data/strategy_memory_YYYY-MM.jsonl 追加一份 live run 快照（已知副作用，待另行处置）。
     prev_mode = None
     try:
         from services.portfolio_backtest import BacktestRequest, run_portfolio_backtest

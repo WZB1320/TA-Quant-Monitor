@@ -159,6 +159,8 @@
 .dash-chip.u b { color: var(--d-up); }
 .dash-chip.d b { color: var(--d-down); }
 .dash-chip.g b { color: var(--d-gold-2); }
+.dash-chip.m b { color: #94A3B8; }
+.dash-chip.m { border-style: dashed; }
 
 .dash-tbl { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .dash-ths, .dash-tr {
@@ -210,6 +212,10 @@
 .dash-score .v { font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; }
 .dash-exec { font-family: var(--d-sans); font-size: 11.5px; letter-spacing: 0.2px; white-space: nowrap; }
 .dash-exec.ok { color: var(--d-down); font-weight: 600; }
+.dash-exec.miss { color: #94A3B8; border-bottom: 1px dashed rgba(148, 163, 184, 0.5); }
+/* 数据缺失占位行: 整行降透明 + 虚线底，明确区别于「有信号但被拦」的行 */
+.dash-tr.miss { opacity: 0.72; }
+.dash-tr.miss:hover { opacity: 0.92; }
 .dash-hold { display: flex; justify-content: center; }
 .dash-hold svg { filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.6)); }
 .dash-inds {

@@ -4,12 +4,12 @@ import { LEVEL_META, HOLD_ICON, arrow, cls, fx } from './shared'
 
 interface Props {
   rows: SignalRow[]
-  summary: { bullish: number; neutral: number; bearish: number; actionable: number; total: number }
+  summary: { bullish: number; neutral: number; bearish: number; actionable: number; total: number; missing?: number }
   focusCount?: number
 }
 
 export default function SignalTable({ rows, summary, focusCount = 8 }: Props) {
-  const maxAbs = Math.max(...rows.map(r => Math.abs(r.score)), 1)
+  const maxAbs = Math.max(...rows.map(r => Math.abs(r.score ?? 0)), 1)
 
   return (
     <div className="dash-panel d1">
@@ -21,7 +21,10 @@ export default function SignalTable({ rows, summary, focusCount = 8 }: Props) {
           <span className="dash-chip u">看涨<b>{summary.bullish}</b></span>
           <span className="dash-chip">中性<b>{summary.neutral}</b></span>
           <span className="dash-chip d">看空<b>{summary.bearish}</b></span>
-          <span className="dash-chip g">可执行<b>{summary.actionable}</b></span>
+          <span className="dash-chip g">可操作<b>{summary.actionable}</b></span>
+          {!!summary.missing && (
+            <span className="dash-chip m">数据缺失<b>{summary.missing}</b></span>
+          )}
         </div>
       </div>
 
@@ -44,11 +47,13 @@ export default function SignalTable({ rows, summary, focusCount = 8 }: Props) {
           {rows.map((r, i) => {
             const L = LEVEL_META[r.level] || { c: '#64748B', t: r.label || r.level }
             const ind = r.indicators || {}
-            const sw = Math.max(3, Math.min(100, (Math.abs(r.score) / maxAbs) * 100))
-            const sColor = r.score > 0 ? '#F6465D' : r.score < 0 ? '#0ECB81' : '#64748B'
+            const hasScore = r.score !== null && r.score !== undefined
+            const sw = hasScore ? Math.max(3, Math.min(100, (Math.abs(r.score as number) / maxAbs) * 100)) : 0
+            const sColor = !hasScore ? '#475569'
+              : (r.score as number) > 0 ? '#F6465D' : (r.score as number) < 0 ? '#0ECB81' : '#64748B'
             const focus = i < focusCount
             return (
-              <div className={`dash-tr ${focus ? 'focus' : ''}`} key={r.code}>
+              <div className={`dash-tr ${focus ? 'focus' : ''} ${r.missing ? 'miss' : ''}`} key={r.code}>
                 <div className="bar" style={{ background: L.c }} />
                 <div className="no">{i + 1}</div>
                 <div className="code">
@@ -57,15 +62,17 @@ export default function SignalTable({ rows, summary, focusCount = 8 }: Props) {
                 </div>
                 <div className="grp">{r.group || '—'}</div>
                 <div className="num">{fx(r.close)}</div>
-                <div className={`pct ${cls(r.chg_pct)}`}>{arrow(r.chg_pct)}{fx(r.chg_pct)}%</div>
+                <div className={`pct ${r.chg_pct === null || r.chg_pct === undefined ? 'dash-n' : cls(r.chg_pct)}`}>
+                  {r.chg_pct === null || r.chg_pct === undefined ? '—' : `${arrow(r.chg_pct)}${fx(r.chg_pct)}%`}
+                </div>
                 <div><span className="dash-badge" style={{ background: L.c }}>{L.t}</span></div>
                 <div className="dash-score">
                   <span className="track">
                     <i className="fill" style={{ width: `${sw}%`, background: sColor }} />
                   </span>
-                  <span className="v" style={{ color: sColor }}>{fx(r.score, 1)}</span>
+                  <span className="v" style={{ color: sColor }}>{hasScore ? fx(r.score, 1) : '—'}</span>
                 </div>
-                <div className={`dash-exec ${r.execution?.executable ? 'ok' : ''}`}
+                <div className={`dash-exec ${r.execution?.executable ? 'ok' : ''} ${r.missing ? 'miss' : ''}`}
                   title={r.execution?.reason || undefined}>
                   {r.execution?.status || '—'}
                 </div>

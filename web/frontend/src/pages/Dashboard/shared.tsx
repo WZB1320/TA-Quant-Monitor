@@ -13,14 +13,16 @@ export interface SignalRow {
   code: string
   name: string
   group: string
-  close: number
-  chg_pct: number
+  close: number | null
+  chg_pct: number | null
   level: string
   label: string
-  score: number
+  score: number | null
   execution: { executable?: boolean; status: string; reason?: string }
   held: boolean
   indicators: Record<string, any>
+  /** 数据缺失占位行（未产出信号: 样本不足 / 所在组已暂停） */
+  missing?: boolean
 }
 
 export interface PositionRow {
@@ -50,7 +52,7 @@ export interface DashboardSnapshot {
   initial_capital: number
   indices: IndexRow[]
   signals: {
-    summary: { bullish: number; neutral: number; bearish: number; actionable: number; total: number }
+    summary: { bullish: number; neutral: number; bearish: number; actionable: number; total: number; missing?: number }
     rows: SignalRow[]
   }
   positions: { count: number; position_pct: number; cash_pct: number; rows: PositionRow[] }
@@ -85,7 +87,7 @@ export interface GenStatus {
   finished_at: string | null
 }
 
-/** 7 级信号配色（全屏统一中国惯例: 买=红 / 卖=绿） */
+/** 7 级信号配色（全屏统一中国惯例: 买=红 / 卖=绿）+ 数据缺失占位 */
 export const LEVEL_META: Record<string, { c: string; t: string }> = {
   STRONG_BUY: { c: '#F6465D', t: '强买入' },
   BUY: { c: '#FF7A8A', t: '买入' },
@@ -94,13 +96,17 @@ export const LEVEL_META: Record<string, { c: string; t: string }> = {
   WEAK_SELL: { c: '#4ADE80', t: '注意' },
   SELL: { c: '#0ECB81', t: '卖出' },
   STRONG_SELL: { c: '#0B9E66', t: '强卖出' },
+  MISSING: { c: '#475569', t: '数据缺失' },
 }
 
 export const sgn = (v: number) => (v > 0 ? '+' : '')
 export const cls = (v: number) => (v > 0 ? 'dash-u' : v < 0 ? 'dash-d' : 'dash-n')
 export const arrow = (v: number) => (v > 0 ? '▲' : v < 0 ? '▼' : '—')
-export const fx = (v: number, d = 2) => Number(v).toFixed(d)
-export const pc = (v: number) => sgn(v) + fx(v) + '%'
+/** 数值格式化：null/NaN → 「—」（数据缺失不伪装成 0） */
+export const fx = (v: number | null | undefined, d = 2) =>
+  v === null || v === undefined || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(d)
+export const pc = (v: number | null | undefined) =>
+  v === null || v === undefined ? '—' : sgn(v) + fx(v) + '%'
 export const round = (v: number, d: number) => {
   const p = Math.pow(10, d)
   return Math.round(v * p) / p

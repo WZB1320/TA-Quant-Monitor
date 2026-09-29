@@ -114,6 +114,13 @@ class _FakeDM:
         return None
 
 
+# 与 _fake_sig_res() 完全对齐的自选股清单 → 无缺失行
+WL_FULL = [
+    {"code": "600392", "name": "盛和资源", "market": "sh"},
+    {"code": "603002", "name": "宏昌电子", "market": "sh"},
+]
+
+
 def _fake_bt_res():
     return {
         "status": "done",
@@ -154,6 +161,7 @@ def test_build_snapshot_schema_and_curves():
         indices=[{"code": "sh.000300", "name": "沪深300", "close": 4439.14,
                   "chg": -78.0, "chg_pct": -1.73, "spark": [4400.0, 4439.14]}],
         sig_res=_fake_sig_res(), bt_res=_fake_bt_res(), t_start=0.0,
+        watchlist_stocks=WL_FULL,
     )
 
     # 口径字段
@@ -166,6 +174,9 @@ def test_build_snapshot_schema_and_curves():
 
     # 信号排序: 按等级降序（NEUTRAL 在 STRONG_SELL 之前）
     assert [r["code"] for r in snap["signals"]["rows"]] == ["603002", "600392"]
+    # 自选股全覆盖 → 无缺失行
+    assert snap["signals"]["summary"]["missing"] == 0
+    assert snap["signals"]["summary"]["total"] == 2
 
     # 持仓: 仅未平仓，权重 100%，现价取末日常规收盘
     pos = snap["positions"]
@@ -190,14 +201,77 @@ def test_build_snapshot_schema_and_curves():
     json.dumps(snap, ensure_ascii=False)
 
 
-def test_snapshot_json_serializable_shape():
-    """信号行 chg_pct 缺数据时必须兜底为 0，而不是缺失键。"""
+def test_snapshot_chg_pct_none_when_unavailable():
+    """信号行取不到两日收盘时 chg_pct 必须为 None（前端渲染「—」），不得伪装成 0。"""
     snap = db.build_snapshot(
         data_date="2026-09-24", dm=_FakeDM(), indices=[],
         sig_res=_fake_sig_res(), bt_res=_fake_bt_res(), t_start=0.0,
+        watchlist_stocks=WL_FULL,
     )
     for r in snap["signals"]["rows"]:
-        assert r["chg_pct"] == 0.0
+        assert r["chg_pct"] is None
+    json.dumps(snap, ensure_ascii=False)   # None 可序列化
+
+
+# ── 数据缺失占位行（需求: 35 只不漏不折叠 + 数据缺失不隐藏） ──
+
+def test_missing_rows_appended_at_tail_and_marked():
+    """自选股中有票未产出信号 → 补占位行（保留行、标数据缺失、沉到最末）。"""
+    wl = WL_FULL + [{"code": "999999", "name": "样本不足股", "market": "sz"}]
+    snap = db.build_snapshot(
+        data_date="2026-09-24", dm=_FakeDM(), indices=[],
+        sig_res=_fake_sig_res(), bt_res=_fake_bt_res(), t_start=0.0,
+        watchlist_stocks=wl,
+    )
+    rows = snap["signals"]["rows"]
+    assert len(rows) == 3                       # 不漏行
+    assert rows[-1]["code"] == "999999"         # 沉到最末
+    m = rows[-1]
+    assert m["missing"] is True
+    assert m["level"] == "MISSING"
+    assert m["label"] == "数据缺失"
+    assert m["execution"]["status"] == "数据缺失"
+    assert m["close"] is None and m["chg_pct"] is None and m["score"] is None
+    assert snap["signals"]["summary"]["missing"] == 1
+    assert snap["signals"]["summary"]["total"] == 3
+    json.dumps(snap, ensure_ascii=False)
+
+
+def test_missing_row_reason_marks_paused_group(monkeypatch):
+    """缺失行若属已暂停分组，原因需写明「已暂停」而非笼统「数据缺失」。"""
+    import src.config.group_config as gcm
+
+    class _FakeGC:
+        def get_group(self, code):
+            return "周期资源型"
+
+    monkeypatch.setattr(gcm, "GroupConfig", _FakeGC)
+
+    sig = _fake_sig_res()
+    sig["paused_skipped"] = {"周期资源型": 1}
+    snap = db.build_snapshot(
+        data_date="2026-09-24", dm=_FakeDM(), indices=[],
+        sig_res=sig, bt_res=_fake_bt_res(), t_start=0.0,
+        watchlist_stocks=[{"code": "777777", "name": "暂停组股", "market": "sh"}],
+    )
+    m = snap["signals"]["rows"][-1]
+    assert m["code"] == "777777" and m["missing"] is True
+    assert "已暂停" in m["execution"]["reason"]
+
+
+def test_missing_row_keeps_held_flag():
+    """缺失行若恰是回测持仓票，仍要打上持仓标记（避免误以为持仓丢了）。"""
+    sig = _fake_sig_res()
+    sig["results"] = [r for r in sig["results"] if r["code"] != "603002"]  # 603002 未产出信号
+    snap = db.build_snapshot(
+        data_date="2026-09-24", dm=_FakeDM(), indices=[],
+        sig_res=sig, bt_res=_fake_bt_res(), t_start=0.0,
+        watchlist_stocks=WL_FULL,
+    )
+    m = next(r for r in snap["signals"]["rows"] if r["code"] == "603002")
+    assert m["missing"] is True
+    assert m["held"] is True          # 回测仍有该持仓 → 标记不丢
+    assert snap["signals"]["summary"]["missing"] == 1
 
 
 # ── 并发互斥 ──
