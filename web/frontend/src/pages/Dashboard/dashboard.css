@@ -28,7 +28,11 @@
   position: relative;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  /* 纵向滚动：高度不再硬塞进一屏，字号与行数才放得开。
+     scrollbar-gutter 预留滚动条宽度，避免「出现滚动条 → 容器变窄 → 缩放比变小」的抖动 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   background: var(--d-bg);
   color: var(--d-txt);
   font-family: var(--d-sans);
@@ -52,12 +56,15 @@
   background-size: 48px 48px;
 }
 
+/* 占位容器：高度由 JS 设为「设计高 × 缩放比」，宽度 100%
+   —— 让滚动条长度精确，同时避免未缩放的 1920px 舞台撑出横向溢出 */
+.dash-stage-fit { position: relative; width: 100%; height: 0; z-index: 1; }
+
 .dash-stage {
-  position: relative; z-index: 1; width: 1920px; height: 1200px; transform-origin: top left;
-  /* flex:none 必需 —— 父级一旦是 flex 容器，固定 1920px 宽会被 flex-shrink 压到容器宽，
-     等于在等比缩放之外又多缩一次，且宽高比例被破坏（宽被压、高不变） */
-  flex: none;
-  display: grid; grid-template-rows: 84px 1fr 40px; gap: 12px; padding: 12px 14px;
+  position: absolute; top: 0; left: 0; z-index: 1; width: 1920px; transform-origin: top left;
+  /* 高度不写死：由内容撑开（表格行数增长时自动变长），超出视口交给 .dash-root 纵向滚动 */
+  height: auto;
+  display: grid; grid-template-rows: 84px auto 40px; gap: 12px; padding: 12px 14px;
 }
 
 /* ═══ 面板 ═══ */
@@ -89,7 +96,7 @@
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.55);
 }
 .dash-tag {
-  font-size: 11px; color: var(--d-txt-3); border: 1px solid var(--d-line); border-radius: 5px;
+  font-size: 11.5px; color: var(--d-txt-3); border: 1px solid var(--d-line); border-radius: 5px;
   padding: 2px 8px; letter-spacing: 0.4px; white-space: nowrap;
 }
 .dash-tag.warn { color: var(--d-gold-2); border-color: rgba(245, 158, 11, 0.32); background: var(--d-gold-dim); }
@@ -103,7 +110,7 @@
 .dash-brand h1 { font-size: 25px; font-weight: 700; letter-spacing: 7px; line-height: 1.15; }
 .dash-brand h1 em { font-style: normal; color: var(--d-gold-2); }
 .dash-brand .sub {
-  font-family: var(--d-mono); font-size: 10.5px; letter-spacing: 2.6px;
+  font-family: var(--d-mono); font-size: 11.5px; letter-spacing: 2.6px;
   color: var(--d-txt-4); margin-top: 6px;
 }
 .dash-idx-wrap { display: flex; gap: 12px; }
@@ -134,7 +141,7 @@
 .dash-fresh .row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--d-txt-3); }
 .dash-fresh b { color: var(--d-txt); font-family: var(--d-mono); font-weight: 600; font-size: 13.5px; }
 .dash-badge-lag {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; padding: 3px 10px;
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px;
   border-radius: 20px; color: var(--d-gold-2); background: var(--d-gold-dim);
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
@@ -147,18 +154,19 @@
 }
 
 /* ═══ 主体 ═══ */
-.dash-main { display: grid; grid-template-columns: 62fr 38fr; gap: 12px; min-height: 0; }
+.dash-main { display: grid; grid-template-columns: 62fr 38fr; gap: 12px; align-items: start; }
 .dash-col { display: grid; gap: 12px; min-height: 0; }
-.dash-col.right { grid-template-rows: 56fr 44fr; }
+/* 右栏两块面板给固定设计高度：不再随舞台整体高度拉伸，避免持仓面板被拉出大片空白 */
+.dash-col.right { grid-template-rows: 569px 447px; }
 
 /* ═══ 信号表 ═══ */
 .dash-sum { display: flex; gap: 8px; margin-left: auto; }
 .dash-chip {
   display: flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 6px;
-  font-size: 12px; background: var(--d-surface-3); border: 1px solid var(--d-line-soft);
+  font-size: 12.5px; background: var(--d-surface-3); border: 1px solid var(--d-line-soft);
   color: var(--d-txt-3);
 }
-.dash-chip b { font-family: var(--d-mono); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dash-chip b { font-family: var(--d-mono); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .dash-chip.u b { color: var(--d-up); }
 .dash-chip.d b { color: var(--d-down); }
 .dash-chip.g b { color: var(--d-gold-2); }
@@ -168,11 +176,11 @@
 .dash-tbl { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .dash-ths, .dash-tr {
   display: grid;
-  grid-template-columns: 3px 26px 112px 84px 72px 76px 100px 96px 92px 30px 1fr;
+  grid-template-columns: 3px 28px 150px 118px 100px 100px 100px 130px 140px 30px 1fr;
   align-items: center; padding: 0 14px 0 0;
 }
 .dash-ths {
-  height: 34px; font-size: 10.5px; letter-spacing: 1.2px; color: var(--d-txt-4);
+  height: 36px; font-size: 12px; letter-spacing: 1.2px; color: var(--d-txt-4);
   background: rgba(30, 41, 59, 0.55); border-bottom: 1px solid var(--d-line-soft);
 }
 .dash-ths > div, .dash-tr > div { padding-left: 10px; }
@@ -186,34 +194,34 @@
   font-family: var(--d-mono); transition: background 0.15s ease;
 }
 .dash-tr .bar { width: 3px; height: 100%; border-radius: 0 2px 2px 0; opacity: 0.9; }
-.dash-tr.focus { height: 40px; font-size: 15px; background: rgba(245, 158, 11, 0.035); }
-.dash-tr:not(.focus) { height: 24.2px; font-size: 12.5px; color: #b9c5d6; }
+.dash-tr.focus { height: 46px; font-size: 17px; background: rgba(245, 158, 11, 0.035); }
+.dash-tr:not(.focus) { height: 28px; font-size: 13.5px; color: #b9c5d6; }
 .dash-tr:hover { background: rgba(148, 163, 184, 0.09); }
-.dash-tr .no { color: var(--d-txt-4); font-size: 11px; }
+.dash-tr .no { color: var(--d-txt-4); font-size: 12px; }
 .dash-tr .code { font-weight: 600; letter-spacing: 0.3px; }
 .dash-tr .code small {
-  display: block; font-family: var(--d-sans); font-size: 10.5px; font-weight: 400;
+  display: block; font-family: var(--d-sans); font-size: 11.5px; font-weight: 400;
   color: var(--d-txt-4); letter-spacing: 0; margin-top: 1px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; max-width: 104px;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 142px;
 }
-.dash-tr .code small.inl { display: inline; margin: 0 0 0 5px; max-width: 66px; vertical-align: baseline; }
-.dash-tr .grp { font-family: var(--d-sans); font-size: 11px; color: var(--d-txt-4); overflow: hidden; white-space: nowrap; }
+.dash-tr .code small.inl { display: inline; margin: 0 0 0 5px; max-width: 96px; vertical-align: baseline; }
+.dash-tr .grp { font-family: var(--d-sans); font-size: 12px; color: var(--d-txt-4); overflow: hidden; white-space: nowrap; }
 .dash-tr .num { font-variant-numeric: tabular-nums; text-align: right; padding-right: 6px; }
 .dash-tr .pct { font-variant-numeric: tabular-nums; text-align: right; padding-right: 6px; font-weight: 600; }
 .dash-badge {
   display: inline-block; padding: 2px 9px; border-radius: 5px; font-family: var(--d-sans);
-  font-size: 12px; font-weight: 700; color: #0b1220; letter-spacing: 0.5px;
-  text-align: center; min-width: 62px;
+  font-size: 13px; font-weight: 700; color: #0b1220; letter-spacing: 0.5px;
+  text-align: center; min-width: 68px;
 }
-.dash-tr:not(.focus) .dash-badge { font-size: 11px; padding: 1px 7px; min-width: 54px; }
+.dash-tr:not(.focus) .dash-badge { font-size: 12px; padding: 2px 8px; min-width: 60px; }
 .dash-score { display: flex; align-items: center; gap: 7px; }
 .dash-score .track {
-  position: relative; width: 40px; height: 4px; border-radius: 2px;
+  position: relative; width: 48px; height: 5px; border-radius: 3px;
   background: rgba(148, 163, 184, 0.16); overflow: hidden;
 }
 .dash-score .fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 2px; }
-.dash-score .v { font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; }
-.dash-exec { font-family: var(--d-sans); font-size: 11.5px; letter-spacing: 0.2px; white-space: nowrap; }
+.dash-score .v { font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
+.dash-exec { font-family: var(--d-sans); font-size: 12.5px; letter-spacing: 0.2px; white-space: nowrap; }
 .dash-exec.ok { color: var(--d-down); font-weight: 600; }
 .dash-exec.miss { color: #94A3B8; border-bottom: 1px dashed rgba(148, 163, 184, 0.5); }
 /* 数据缺失占位行: 整行降透明 + 虚线底，明确区别于「有信号但被拦」的行 */
@@ -222,7 +230,7 @@
 .dash-hold { display: flex; justify-content: center; }
 .dash-hold svg { filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.6)); }
 .dash-inds {
-  font-size: 11px; color: var(--d-txt-4); text-align: right; padding-right: 2px;
+  font-size: 12px; color: var(--d-txt-4); text-align: right; padding-right: 2px;
   font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap;
 }
 
@@ -234,7 +242,7 @@
   color: var(--d-gold-2); letter-spacing: -1px; font-variant-numeric: tabular-nums;
   text-shadow: 0 0 26px rgba(245, 158, 11, 0.35);
 }
-.dash-unit { font-size: 11.5px; color: var(--d-txt-4); letter-spacing: 1px; padding-bottom: 5px; }
+.dash-unit { font-size: 12px; color: var(--d-txt-4); letter-spacing: 1px; padding-bottom: 5px; }
 .dash-money {
   font-family: var(--d-mono); font-size: 19px; color: var(--d-txt-2);
   padding-bottom: 4px; font-variant-numeric: tabular-nums;
@@ -244,7 +252,7 @@
   padding: 7px 10px; border-radius: 8px; background: rgba(30, 41, 59, 0.55);
   border: 1px solid var(--d-line-soft);
 }
-.dash-kpi .k { font-size: 10.5px; color: var(--d-txt-4); letter-spacing: 0.6px; }
+.dash-kpi .k { font-size: 11.5px; color: var(--d-txt-4); letter-spacing: 0.6px; }
 .dash-kpi .v {
   font-family: var(--d-mono); font-size: 16px; font-weight: 700; margin-top: 3px;
   font-variant-numeric: tabular-nums;
@@ -252,7 +260,7 @@
 .dash-kpi.hl { background: var(--d-gold-dim); border-color: rgba(245, 158, 11, 0.28); }
 .dash-kpi.hl .v { color: var(--d-gold-2); }
 .dash-legend {
-  display: flex; gap: 20px; font-size: 11.5px; color: var(--d-txt-4);
+  display: flex; gap: 20px; font-size: 12px; color: var(--d-txt-4);
   padding: 6px 2px 0; align-items: center;
 }
 .dash-legend i { display: inline-block; width: 20px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 7px; }
@@ -261,24 +269,24 @@
 /* ═══ 持仓 ═══ */
 .dash-pos-top { display: flex; align-items: center; gap: 22px; padding: 12px 18px 10px; }
 .dash-pos-top .kv { display: flex; flex-direction: column; gap: 3px; }
-.dash-pos-top .k { font-size: 10.5px; color: var(--d-txt-4); letter-spacing: 0.8px; }
+.dash-pos-top .k { font-size: 11.5px; color: var(--d-txt-4); letter-spacing: 0.8px; }
 .dash-pos-top .v { font-family: var(--d-mono); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .dash-expo { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 120px; }
 .dash-expo .track { height: 8px; border-radius: 4px; background: rgba(148, 163, 184, 0.14); overflow: hidden; display: flex; }
 .dash-expo .track i { height: 100%; }
-.dash-expo .lg { display: flex; gap: 14px; font-size: 10.5px; color: var(--d-txt-4); }
+.dash-expo .lg { display: flex; gap: 14px; font-size: 11.5px; color: var(--d-txt-4); }
 .dash-ptbl { flex: 1; padding: 0 14px 10px; overflow: hidden; }
 .dash-phd, .dash-prow {
   display: grid; grid-template-columns: 150px 76px 124px 74px 90px 72px 1fr;
   align-items: center; padding: 0 6px;
 }
 .dash-phd {
-  height: 28px; font-size: 10.5px; letter-spacing: 1.1px; color: var(--d-txt-4);
+  height: 30px; font-size: 11.5px; letter-spacing: 1.1px; color: var(--d-txt-4);
   border-bottom: 1px solid var(--d-line-soft);
 }
 .dash-prow {
   height: 52px; border-bottom: 1px solid rgba(38, 51, 74, 0.4); font-family: var(--d-mono);
-  font-size: 15px; font-variant-numeric: tabular-nums; transition: background 0.15s ease;
+  font-size: 16px; font-variant-numeric: tabular-nums; transition: background 0.15s ease;
 }
 .dash-prow:hover { background: rgba(148, 163, 184, 0.07); }
 .dash-prow .code { font-weight: 600; }
@@ -286,7 +294,7 @@
   display: block; font-family: var(--d-sans); font-size: 11px; font-weight: 400;
   color: var(--d-txt-4); margin-top: 3px;
 }
-.dash-prow .grp { font-family: var(--d-sans); font-size: 11.5px; color: var(--d-txt-4); }
+.dash-prow .grp { font-family: var(--d-sans); font-size: 12px; color: var(--d-txt-4); }
 .dash-prow .num { text-align: right; padding-right: 8px; }
 .dash-prow .w { display: flex; align-items: center; gap: 9px; justify-content: flex-end; padding-right: 4px; }
 .dash-prow .w .track { width: 64px; height: 5px; border-radius: 3px; background: rgba(148, 163, 184, 0.16); overflow: hidden; }
@@ -298,7 +306,7 @@
 
 /* ═══ 底栏 ═══ */
 .dash-foot {
-  display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: var(--d-txt-4);
+  display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--d-txt-4);
   border-top: 1px solid var(--d-line-soft); padding-top: 9px;
 }
 .dash-foot b { color: var(--d-txt-2); font-family: var(--d-mono); font-weight: 600; }
