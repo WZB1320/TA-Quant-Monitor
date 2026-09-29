@@ -416,12 +416,20 @@ class SignalEngine:
         if df is not None and not df.empty and "close" in df.columns:
             price_at_signal = float(df.iloc[-1]["close"])
 
+        # 交易日 — 记忆记录的关联键
+        # 实时分析走 analyze_batch(不传 analysis_date), 若此处不回退取数据最后一根的日期,
+        # 记录的 analysis_date 恒为 null: report_generator 用 f"{symbol}_{analysis_date}"
+        # 做 signal→outcome 关联会退化成 "600549_None" 永远匹配不上, 且无法按交易日判重。
+        record_date = analysis_date
+        if record_date is None and df is not None and not df.empty and "date" in df.columns:
+            record_date = df.iloc[-1]["date"]
+
         # 分组名 (从 group_config 获取, group_params 不含此字段)
         group_name = self.group_config.get_group(symbol) if self.group_config else None
 
         self.memory.record_signal({
             "symbol": symbol,
-            "analysis_date": str(analysis_date) if analysis_date else None,
+            "analysis_date": str(record_date)[:10] if record_date else None,
             "group": group_name,
             "regime": forced_regime or "auto",
             "level": level.label,

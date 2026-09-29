@@ -397,8 +397,9 @@ def generate(force: bool = True, on_progress: Optional[Callable[[int, str], None
                    "finished_at": None})
     # 生成期使用 BACKTEST 模式: 信号过滤器走纯内存历史, 不写 data/signal_history.json,
     # 避免清空/污染实盘信号去重记录（与 demo 一致）。
-    # 注意: 策略记忆层不受此开关控制 — SignalAnalyzer 内部固定 StrategyMemory(source="live")，
-    # 因此每次生成仍会向 data/strategy_memory_YYYY-MM.jsonl 追加一份 live run 快照（已知副作用，待另行处置）。
+    # 策略记忆层不受此开关控制 — SignalAnalyzer 内部固定 StrategyMemory(source="live"),
+    # 因此本流程产出的信号仍会作为实盘记忆记账（这是期望的: 收盘复盘本就是当日实盘信号）。
+    # 重复生成不再产生冗余: 记忆层按 (标的, 交易日, 级别, 参数版本) 幂等写入。
     prev_mode = None
     try:
         from services.portfolio_backtest import BacktestRequest, run_portfolio_backtest
