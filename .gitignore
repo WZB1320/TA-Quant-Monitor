@@ -1,17 +1,10 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.egg-info/
-dist/
-build/
-*.egg
-.venv/
-venv/
-env/
 
-# Data & Cache
-data/kline_cache.db
+# Dashboard generated artifacts
+data/dashboard.json
+data/dashboard.json.tmp
+web/dashboard/
+.playwright-cli/
+line_cache.db
 output/
 
 # IDE
