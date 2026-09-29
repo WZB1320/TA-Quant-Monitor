@@ -7,6 +7,7 @@ import {
   FundOutlined,
   ThunderboltOutlined,
   AimOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content, Header } = Layout
@@ -17,6 +18,7 @@ const menuItems = [
   { key: '/config', icon: <SettingOutlined />, label: '策略配置' },
   { key: '/backtest', icon: <LineChartOutlined />, label: '回测分析' },
   { key: '/stock-backtest', icon: <AimOutlined />, label: '个股回测' },
+  { key: '/dashboard', icon: <DashboardOutlined />, label: '复盘大屏' },
 ]
 
 export default function MainLayout() {

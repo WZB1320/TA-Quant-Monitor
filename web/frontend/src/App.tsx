@@ -7,6 +7,7 @@ import SignalsPage from './pages/Signals'
 import ConfigPage from './pages/Config'
 import BacktestPage from './pages/Backtest'
 import StockBacktestPage from './pages/StockBacktest'
+import DashboardPage from './pages/Dashboard'
 
 function App() {
   return (
@@ -57,6 +58,7 @@ function App() {
               <Route path="config" element={<ConfigPage />} />
               <Route path="backtest" element={<BacktestPage />} />
               <Route path="stock-backtest" element={<StockBacktestPage />} />
+              <Route path="dashboard" element={<DashboardPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

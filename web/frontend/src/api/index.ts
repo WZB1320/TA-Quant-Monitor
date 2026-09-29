@@ -85,4 +85,15 @@ export const stockBacktestApi = {
   getStocks: () => api.get('/stock-backtest/stocks'),
 }
 
+// ── 收盘复盘大屏 ──
+
+export const dashboardApi = {
+  /** 读取快照 + 数据新鲜度 + 生成状态（快照缺失时 snapshot=null） */
+  getSnapshot: () => api.get('/dashboard/snapshot'),
+  /** 触发生成（异步，约 1–4 分钟）；已有任务在跑返回 409 */
+  refresh: () => api.post('/dashboard/refresh'),
+  /** 轮询生成状态 */
+  getStatus: () => api.get('/dashboard/status'),
+}
+
 export default api
