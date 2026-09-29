@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Layout, Menu } from 'antd'
+import { Layout, Menu, Button, Tooltip } from 'antd'
 import {
   StockOutlined,
   SettingOutlined,
@@ -8,6 +9,8 @@ import {
   ThunderboltOutlined,
   AimOutlined,
   DashboardOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons'
 
 const { Sider, Content, Header } = Layout
@@ -21,9 +24,31 @@ const menuItems = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '复盘大屏' },
 ]
 
+/** 菜单栏收展状态：收起 = 仅图标 64px，展开 = 200px（全宽）。状态存本地，刷新后保持 */
+const SIDER_COLLAPSED_KEY = 'qm.sider.collapsed'
+
+function readStoredCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDER_COLLAPSED_KEY) === '1'
+  } catch {
+    return false // 隐私模式等 localStorage 不可用时按展开处理
+  }
+}
+
 export default function MainLayout() {
   const navigate = useNavigate()
   const location = useLocation()
+  const [collapsed, setCollapsed] = useState(readStoredCollapsed)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDER_COLLAPSED_KEY, collapsed ? '1' : '0')
+    } catch {
+      // 写不进去不影响功能，仅丢失记忆
+    }
+  }, [collapsed])
+
+  const toggleLabel = collapsed ? '展开菜单' : '收起菜单'
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#080e1a' }}>
@@ -38,6 +63,22 @@ export default function MainLayout() {
           gap: 12,
         }}
       >
+        <Tooltip title={toggleLabel} placement="bottomLeft">
+          <Button
+            type="text"
+            aria-label={toggleLabel}
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(v => !v)}
+            style={{
+              color: '#94a3b8',
+              fontSize: 17,
+              width: 34,
+              height: 34,
+              marginLeft: -10,
+              flex: 'none',
+            }}
+          />
+        </Tooltip>
         <FundOutlined style={{ fontSize: 22, color: '#3b82f6' }} />
         <span
           style={{
@@ -64,6 +105,11 @@ export default function MainLayout() {
       <Layout>
         <Sider
           width={200}
+          collapsedWidth={64}
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          trigger={null}
           style={{
             background: '#0a1628',
             borderRight: '1px solid #1e2d45',
