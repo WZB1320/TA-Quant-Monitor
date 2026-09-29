@@ -129,7 +129,9 @@ export default function DashboardPage() {
   )
 
   /* 单一稳定根节点：任何状态下 .dash-root / .dash-stage 的 DOM 身份不变，
-     保证 useFitScale 的 ResizeObserver 始终挂在活节点上（条件换根会导致缩放失效） */
+     保证 useFitScale 的 ResizeObserver 始终挂在活节点上（条件换根会导致缩放失效）
+     注意：.dash-root 不能是 flex 容器 —— 固定 1920px 宽的 .dash-stage 会被 flex-shrink
+     压到容器宽，等比缩放之外再缩一次。状态页 .dash-state 自带 100% 宽高 + flex 居中，无需父级 flex */
   const N = snap?.nav
 
   const stateView = (
@@ -161,7 +163,7 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="dash-root" ref={wrapRef} style={{ ...ROOT_STYLE, display: 'flex' }}>
+    <div className="dash-root" ref={wrapRef} style={ROOT_STYLE}>
       <div className="dash-stage" ref={stageRef} style={{ display: snap ? 'grid' : 'none' }}>
         {snap && N && (
           <>

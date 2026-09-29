@@ -54,6 +54,9 @@
 
 .dash-stage {
   position: relative; z-index: 1; width: 1920px; height: 1200px; transform-origin: top left;
+  /* flex:none 必需 —— 父级一旦是 flex 容器，固定 1920px 宽会被 flex-shrink 压到容器宽，
+     等于在等比缩放之外又多缩一次，且宽高比例被破坏（宽被压、高不变） */
+  flex: none;
   display: grid; grid-template-rows: 84px 1fr 40px; gap: 12px; padding: 12px 14px;
 }
 
