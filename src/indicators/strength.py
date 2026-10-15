@@ -68,9 +68,9 @@ class ADXIndicator(BaseIndicator):
         return self._make_result(
             direction, "buy" if direction > 0 else "sell" if direction < 0 else "neutral",
             strength, desc,
-            adx=round(latest_adx, 1), plus_di=round(latest_plus, 1),
-            minus_di=round(latest_minus, 1),
-            adx_prev=round(prev_adx, 1) if prev_adx is not None else None
+            adx=latest_adx, plus_di=latest_plus,
+            minus_di=latest_minus,
+            adx_prev=prev_adx
         )
 
     @staticmethod
@@ -173,8 +173,8 @@ class ATRIndicator(BaseIndicator):
         return self._make_result(
             0, "neutral", vol_str,
             f"ATR={latest_atr:.2f} ({atr_pct:.1f}%), {vol_level}, 仓位系数={vol_str:.1f}",
-            atr=round(latest_atr, 2), atr_pct=round(atr_pct, 2),
-            vol_level=vol_level, position_mult=round(vol_str, 2)
+            atr=latest_atr, atr_pct=atr_pct,
+            vol_level=vol_level, position_mult=vol_str
         )
 
     @staticmethod

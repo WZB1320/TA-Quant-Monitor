@@ -55,7 +55,7 @@ class RSIIndicator(BaseIndicator):
             return self._make_result(
                 0, "neutral", 0.0,
                 f"RSI中性缓冲区 (平滑RSI={latest:.1f}), 观望",
-                rsi=round(latest, 1), rsi_raw=round(rsi_raw[-1], 1)
+                rsi=latest, rsi_raw=rsi_raw[-1]
             )
 
         # 超卖区域拐头向上
@@ -63,34 +63,34 @@ class RSIIndicator(BaseIndicator):
             return self._make_result(
                 1, "buy", 0.7,
                 f"RSI超卖反弹! 平滑RSI={latest:.1f}, 从低位拐头向上",
-                rsi=round(latest, 1), rsi_raw=round(rsi_raw[-1], 1)
+                rsi=latest, rsi_raw=rsi_raw[-1]
             )
         # 超买区域拐头向下
         elif latest > overbought and latest < prev:
             return self._make_result(
                 -1, "sell", 0.7,
                 f"RSI超买回落! 平滑RSI={latest:.1f}, 从高位拐头向下",
-                rsi=round(latest, 1), rsi_raw=round(rsi_raw[-1], 1)
+                rsi=latest, rsi_raw=rsi_raw[-1]
             )
         # 多头区间
         elif latest > nz_high:
             return self._make_result(
                 1, "buy", 0.3,
                 f"RSI强多头区间 (平滑RSI={latest:.1f})",
-                rsi=round(latest, 1), rsi_raw=round(rsi_raw[-1], 1)
+                rsi=latest, rsi_raw=rsi_raw[-1]
             )
         # 空头区间
         elif latest < nz_low:
             return self._make_result(
                 -1, "sell", 0.3,
                 f"RSI强空头区间 (平滑RSI={latest:.1f})",
-                rsi=round(latest, 1), rsi_raw=round(rsi_raw[-1], 1)
+                rsi=latest, rsi_raw=rsi_raw[-1]
             )
         else:
             return self._make_result(
                 0, "neutral", 0.0,
                 f"RSI中性 (平滑RSI={latest:.1f})",
-                rsi=round(latest, 1), rsi_raw=round(rsi_raw[-1], 1)
+                rsi=latest, rsi_raw=rsi_raw[-1]
             )
 
     @staticmethod
@@ -160,27 +160,27 @@ class KDJIndicator(BaseIndicator):
             return self._make_result(
                 1, "buy", 0.8 if latest_j < oversold_j else 0.5,
                 f"KDJ{'超卖' if latest_j < oversold_j else ''}金叉! K={latest_k:.1f}, D={latest_d:.1f}, J={latest_j:.1f}",
-                K=round(latest_k, 1), D=round(latest_d, 1), J=round(latest_j, 1)
+                K=latest_k, D=latest_d, J=latest_j
             )
         # 超买区死叉 (K下穿D 且 J>overbought_j)
         elif prev_k >= prev_d and latest_k < latest_d and latest_j > 50:
             return self._make_result(
                 -1, "sell", 0.8 if latest_j > overbought_j else 0.5,
                 f"KDJ{'超买' if latest_j > overbought_j else ''}死叉! K={latest_k:.1f}, D={latest_d:.1f}, J={latest_j:.1f}",
-                K=round(latest_k, 1), D=round(latest_d, 1), J=round(latest_j, 1)
+                K=latest_k, D=latest_d, J=latest_j
             )
         # 金叉后多头
         elif latest_k > latest_d:
             return self._make_result(
                 1, "buy", 0.3,
                 f"KDJ多头排列 (K={latest_k:.1f} > D={latest_d:.1f})",
-                K=round(latest_k, 1), D=round(latest_d, 1), J=round(latest_j, 1)
+                K=latest_k, D=latest_d, J=latest_j
             )
         else:
             return self._make_result(
                 -1, "sell", 0.3,
                 f"KDJ空头排列 (K={latest_k:.1f} < D={latest_d:.1f})",
-                K=round(latest_k, 1), D=round(latest_d, 1), J=round(latest_j, 1)
+                K=latest_k, D=latest_d, J=latest_j
             )
 
     @staticmethod

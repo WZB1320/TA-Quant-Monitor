@@ -45,28 +45,28 @@ class OBVIndicator(BaseIndicator):
             return self._make_result(
                 1, "buy", 0.8,
                 "OBV与价格同步创新高, 量价共振, 上涨有资金支撑",
-                obv=round(obv[-1], 0)
+                obv=obv[-1]
             )
         # 量价背离：价格新高但 OBV 未新高
         elif price_new_high and not obv_new_high:
             return self._make_result(
                 -1, "sell", 0.7,
                 "OBV未随价格创新高, 量价背离! 警惕假突破/见顶",
-                obv=round(obv[-1], 0)
+                obv=obv[-1]
             )
         # OBV下降趋势
         elif obv_direction < 0:
             return self._make_result(
                 -1, "sell", 0.4,
                 "OBV下降趋势, 资金在流出",
-                obv=round(obv[-1], 0)
+                obv=obv[-1]
             )
         # OBV上升趋势
         else:
             return self._make_result(
                 1, "buy", 0.4,
                 "OBV上升趋势, 资金在流入",
-                obv=round(obv[-1], 0)
+                obv=obv[-1]
             )
 
     @staticmethod
@@ -105,35 +105,35 @@ class VolumeRatioIndicator(BaseIndicator):
             return self._make_result(
                 1, "buy", 0.9,
                 f"大幅放量上涨! 量比={vol_ratio:.1f}倍, 突破信号强烈",
-                vol_ratio=round(vol_ratio, 1)
+                vol_ratio=vol_ratio
             )
         elif vol_ratio > 1.5 and price_up:
             return self._make_result(
                 1, "buy", 0.5,
                 f"放量上涨 (量比={vol_ratio:.1f}), 量价配合良好",
-                vol_ratio=round(vol_ratio, 1)
+                vol_ratio=vol_ratio
             )
         elif vol_ratio > 2.0 and not price_up:
             return self._make_result(
                 -1, "sell", 0.7,
                 f"放量下跌! 量比={vol_ratio:.1f}倍, 有资金出逃迹象",
-                vol_ratio=round(vol_ratio, 1)
+                vol_ratio=vol_ratio
             )
         elif vol_ratio > 1.5 and not price_up:
             return self._make_result(
                 -1, "sell", 0.4,
                 f"放量下跌 (量比={vol_ratio:.1f}), 注意风险",
-                vol_ratio=round(vol_ratio, 1)
+                vol_ratio=vol_ratio
             )
         elif vol_ratio < 0.5:
             return self._make_result(
                 0, "neutral", 0.0,
                 f"严重缩量 (量比={vol_ratio:.1f}), 交投清淡",
-                vol_ratio=round(vol_ratio, 1)
+                vol_ratio=vol_ratio
             )
         else:
             return self._make_result(
                 0, "neutral", 0.0,
                 f"正常量能 (量比={vol_ratio:.1f})",
-                vol_ratio=round(vol_ratio, 1)
+                vol_ratio=vol_ratio
             )

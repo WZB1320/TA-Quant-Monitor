@@ -35,13 +35,13 @@ class MA60Indicator(BaseIndicator):
             return self._make_result(
                 1, "buy", min(abs(pct) / 5, 1.0),
                 f"价格在MA60上方 ({latest:.2f} > {ma60:.2f}), 多头区域",
-                ma60=round(ma60, 2), price=latest, deviation_pct=round(pct, 2)
+                ma60=ma60, price=latest, deviation_pct=pct
             )
         else:
             return self._make_result(
                 -1, "sell", min(abs(pct) / 5, 1.0),
                 f"价格在MA60下方 ({latest:.2f} < {ma60:.2f}), 空头区域",
-                ma60=round(ma60, 2), price=latest, deviation_pct=round(pct, 2)
+                ma60=ma60, price=latest, deviation_pct=pct
             )
 
 
@@ -85,21 +85,21 @@ class EMADualIndicator(BaseIndicator):
                 return self._make_result(
                     1, "buy", 0.5,
                     f"EMA左侧潜伏买点! 差值收缩中 (diff={diff_pct:+.2f}%), 价格站上EMA{fast_period}",
-                    ema12=round(latest_f, 2), ema26=round(latest_s, 2),
-                    diff_pct=round(diff_pct, 2)
+                    ema12=latest_f, ema26=latest_s,
+                    diff_pct=diff_pct
                 )
 
         # 金叉
         if prev_f <= prev_s and latest_f > latest_s:
             return self._make_result(
                 1, "buy", 0.8, f"EMA金叉! EMA{fast_period}({latest_f:.2f}) 上穿 EMA{slow_period}({latest_s:.2f})",
-                ema12=round(latest_f, 2), ema26=round(latest_s, 2), diff_pct=round(diff_pct, 2)
+                ema12=latest_f, ema26=latest_s, diff_pct=diff_pct
             )
         # 死叉
         elif prev_f >= prev_s and latest_f < latest_s:
             return self._make_result(
                 -1, "sell", 0.8, f"EMA死叉! EMA{fast_period}({latest_f:.2f}) 下穿 EMA{slow_period}({latest_s:.2f})",
-                ema12=round(latest_f, 2), ema26=round(latest_s, 2), diff_pct=round(diff_pct, 2)
+                ema12=latest_f, ema26=latest_s, diff_pct=diff_pct
             )
         # 多头排列
         elif latest_f > latest_s:
@@ -108,12 +108,12 @@ class EMADualIndicator(BaseIndicator):
                 1, "buy", strength,
                 f"EMA多头排列 (EMA{fast_period}={latest_f:.2f} > EMA{slow_period}={latest_s:.2f}), "
                 f"开口{'扩大' if diff_trend > 0 else '持平/收缩'}",
-                ema12=round(latest_f, 2), ema26=round(latest_s, 2), diff_pct=round(diff_pct, 2)
+                ema12=latest_f, ema26=latest_s, diff_pct=diff_pct
             )
         else:
             return self._make_result(
                 -1, "sell", 0.4, f"EMA空头排列 (EMA{fast_period}={latest_f:.2f} < EMA{slow_period}={latest_s:.2f})",
-                ema12=round(latest_f, 2), ema26=round(latest_s, 2), diff_pct=round(diff_pct, 2)
+                ema12=latest_f, ema26=latest_s, diff_pct=diff_pct
             )
 
     @staticmethod
@@ -186,8 +186,8 @@ class MACDIndicator(BaseIndicator):
                 return self._make_result(
                     1, "buy", strength,
                     f"MACD左侧潜伏: DIF回升+柱收缩 (DIF={latest_dif:.3f}), 止跌企稳信号{div_note}",
-                    dif=round(latest_dif, 3), dea=round(latest_dea, 3),
-                    bar=round(latest_bar, 3),
+                    dif=latest_dif, dea=latest_dea,
+                    bar=latest_bar,
                     bearish_divergence=bearish_div, bullish_divergence=bullish_div
                 )
 
@@ -201,8 +201,8 @@ class MACDIndicator(BaseIndicator):
                 return self._make_result(
                     1, "buy", strength,
                     f"MACD零轴上方金叉! DIF({latest_dif:.3f}) 上穿 DEA({latest_dea:.3f}){div_suffix}",
-                    dif=round(latest_dif, 3), dea=round(latest_dea, 3),
-                    bar=round(latest_bar, 3),
+                    dif=latest_dif, dea=latest_dea,
+                    bar=latest_bar,
                     bearish_divergence=bearish_div, bullish_divergence=bullish_div
                 )
             else:
@@ -212,8 +212,8 @@ class MACDIndicator(BaseIndicator):
                 return self._make_result(
                     1, "buy", strength,
                     f"MACD零轴下方金叉 (弱势反弹信号){div_note}",
-                    dif=round(latest_dif, 3), dea=round(latest_dea, 3),
-                    bar=round(latest_bar, 3),
+                    dif=latest_dif, dea=latest_dea,
+                    bar=latest_bar,
                     bearish_divergence=bearish_div, bullish_divergence=bullish_div
                 )
         # 死叉
@@ -221,8 +221,8 @@ class MACDIndicator(BaseIndicator):
             return self._make_result(
                 -1, "sell", 0.7,
                 f"MACD死叉! DIF({latest_dif:.3f}) 下穿 DEA({latest_dea:.3f})",
-                dif=round(latest_dif, 3), dea=round(latest_dea, 3),
-                bar=round(latest_bar, 3),
+                dif=latest_dif, dea=latest_dea,
+                bar=latest_bar,
                 bearish_divergence=bearish_div, bullish_divergence=bullish_div
             )
         # 多头区域
@@ -242,17 +242,17 @@ class MACDIndicator(BaseIndicator):
             return self._make_result(
                 1, "buy", strength,
                 f"MACD多头区域, DIF={latest_dif:.3f}, 柱{'在增强' if bar_strengthening else '在减弱'}{exp_note}{div_suffix}",
-                dif=round(latest_dif, 3), dea=round(latest_dea, 3),
-                bar=round(latest_bar, 3),
+                dif=latest_dif, dea=latest_dea,
+                bar=latest_bar,
                 bearish_divergence=bearish_div, bullish_divergence=bullish_div,
-                bar_second_expansion=second_exp, bar_expansion_strength=round(exp_strength, 2)
+                bar_second_expansion=second_exp, bar_expansion_strength=exp_strength
             )
         elif latest_dif > 0:
             return self._make_result(
                 1, "buy", 0.2,
                 f"MACD零轴上方但DIF < DEA, 多头减弱",
-                dif=round(latest_dif, 3), dea=round(latest_dea, 3),
-                bar=round(latest_bar, 3),
+                dif=latest_dif, dea=latest_dea,
+                bar=latest_bar,
                 bearish_divergence=bearish_div, bullish_divergence=bullish_div
             )
         else:
@@ -262,8 +262,8 @@ class MACDIndicator(BaseIndicator):
             return self._make_result(
                 -1, "sell", strength,
                 f"MACD空头区域, DIF={latest_dif:.3f}{div_note}",
-                dif=round(latest_dif, 3), dea=round(latest_dea, 3),
-                bar=round(latest_bar, 3),
+                dif=latest_dif, dea=latest_dea,
+                bar=latest_bar,
                 bearish_divergence=bearish_div, bullish_divergence=bullish_div
             )
 
@@ -414,6 +414,6 @@ class MA20Indicator(BaseIndicator):
         return self._make_result(
             0, "neutral", 0.0,
             f"MA20={ma20:.2f}, 价格={latest:.2f}, 偏离={deviation:.2%}",
-            ma20=round(ma20, 2), price=round(float(latest), 2),
-            deviation=round(float(deviation), 4)
+            ma20=ma20, price=float(latest),
+            deviation=float(deviation)
         )
