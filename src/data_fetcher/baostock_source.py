@@ -10,6 +10,19 @@ class BaoStockSource(DataSource):
 
     name = "baostock"
 
+    # 复权参数 (baostock 官方口径, 2026-10-14 实测校准)
+    #   "1" = 后复权, "2" = 前复权, "3" = 不复权
+    # 实测证据 (sh.600887, 收盘价 2024-01-02 / 2026-09-28):
+    #   "3" → 26.27    / 27.03       首末均为真实价              → 不复权
+    #   "2" → 22.95    / 27.03       末日=真实价, 首日被压低      → 前复权
+    #   "1" → 1961.73  / 2310.84     末日>真实价, 首日被放大      → 后复权
+    #
+    # 修正前此处为 {"qfq": "1", "hfq": "2"} (写反). 因 DATA_SOURCE_ORDER 中
+    # akshare 优先而未被触发; 但 akshare 失败由 baostock 接管时, 会把后复权
+    # 数据写入标记为 qfq 的缓存, 静默污染后续全部回测.
+    ADJUST_MAP = {"qfq": "2", "hfq": "1", "": "3", None: "3"}
+    DEFAULT_ADJUST = "2"  # 未知取值回退到前复权, 与 DataManager 默认值一致
+
     def get_daily_kline(
         self,
         symbol: str,
@@ -21,9 +34,7 @@ class BaoStockSource(DataSource):
 
         code = self._format_symbol(symbol)
 
-        # 复权参数: 1=前复权, 2=后复权, 3=不复权
-        adjust_map = {"qfq": "1", "hfq": "2", "": "3", None: "3"}
-        adj = adjust_map.get(adjust, "1")
+        adj = self.ADJUST_MAP.get(adjust, self.DEFAULT_ADJUST)
 
         lg = bs.login()
         if lg.error_code != "0":
