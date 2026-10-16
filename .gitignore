@@ -30,3 +30,6 @@ dist-ssr/
 # Runtime artifacts & agent memory
 data/backtest_memory/
 .workbuddy/
+
+# Frozen data snapshots for backtest baselines (full copy of kline_cache, ~11MB)
+data/baseline_snapshot_*.db
