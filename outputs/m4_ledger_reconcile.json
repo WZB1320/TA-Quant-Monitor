@@ -1,0 +1,932 @@
+{
+ "checked": 10,
+ "passed": 10,
+ "failed": 0,
+ "results": [
+  {
+   "symbol": "600406",
+   "entry_date": "2024-09-26",
+   "exit_date": "2024-11-25",
+   "ok": true,
+   "max_diff": 3.552713678800501e-15,
+   "calc": {
+    "shares0": 100,
+    "shares_final": 100,
+    "entry_open": 26.99,
+    "exp_entry": 26.992698999999998,
+    "exit_open": 25.8,
+    "exit_close": 25.07,
+    "is_stop": true,
+    "exp_exit": 25.07,
+    "holding_days": 60,
+    "tax_rate": 0.1,
+    "events": [
+     {
+      "ex_date": "2024-10-25",
+      "dps": 0.135,
+      "dps_pre": 0.135,
+      "s": 0.0,
+      "shares_before": 100,
+      "cash": 13.5
+     }
+    ],
+    "div_gross": 13.5,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 13.5,
+    "div_tax": 1.35,
+    "buy_amt": 2699.2699000000002,
+    "sell_amt": 2507.0,
+    "comm_buy": 5.0,
+    "comm_sell": 7.507,
+    "commission": 12.507,
+    "pnl": -192.62690000000023,
+    "rec_entry": 26.992699,
+    "rec_exit": 25.07,
+    "rec_shares": 100,
+    "rec_commission": 12.51,
+    "rec_div_gross": 13.5,
+    "rec_div_tax": 1.35,
+    "rec_pnl": -192.6269
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 26.992698999999998,
+     "rec": 26.992699,
+     "diff": -3.552713678800501e-15,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 25.07,
+     "rec": 25.07,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 100.0,
+     "rec": 100.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 13.5,
+     "rec": 13.5,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 1.35,
+     "rec": 1.35,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 12.51,
+     "rec": 12.51,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": -192.63,
+     "rec": -192.63,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "600426",
+   "entry_date": "2024-11-05",
+   "exit_date": "2024-11-20",
+   "ok": true,
+   "max_diff": 3.552713678800501e-15,
+   "calc": {
+    "shares0": 300,
+    "shares_final": 300,
+    "entry_open": 23.8,
+    "exp_entry": 23.80238,
+    "exit_open": 22.67,
+    "exit_close": 22.95,
+    "is_stop": false,
+    "exp_exit": 22.667733000000002,
+    "holding_days": 15,
+    "tax_rate": 0.2,
+    "events": [
+     {
+      "ex_date": "2024-11-15",
+      "dps": 0.3,
+      "dps_pre": 0.3,
+      "s": 0.0,
+      "shares_before": 300,
+      "cash": 90.0
+     }
+    ],
+    "div_gross": 90.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 90.0,
+    "div_tax": 18.0,
+    "buy_amt": 7140.714,
+    "sell_amt": 6800.3198999999995,
+    "comm_buy": 5.0,
+    "comm_sell": 11.8003199,
+    "commission": 16.800319899999998,
+    "pnl": -285.1944199000004,
+    "rec_entry": 23.80238,
+    "rec_exit": 22.667733,
+    "rec_shares": 300,
+    "rec_commission": 16.8,
+    "rec_div_gross": 90.0,
+    "rec_div_tax": 18.0,
+    "rec_pnl": -285.1944
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 23.80238,
+     "rec": 23.80238,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 22.667733000000002,
+     "rec": 22.667733,
+     "diff": 3.552713678800501e-15,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 300.0,
+     "rec": 300.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 90.0,
+     "rec": 90.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 18.0,
+     "rec": 18.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 16.8,
+     "rec": 16.8,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": -285.19,
+     "rec": -285.19,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "300119",
+   "entry_date": "2025-05-08",
+   "exit_date": "2025-05-22",
+   "ok": true,
+   "max_diff": 0.0,
+   "calc": {
+    "shares0": 1300,
+    "shares_final": 1300,
+    "entry_open": 19.96,
+    "exp_entry": 19.961996,
+    "exit_open": 25.49,
+    "exit_close": 24.92,
+    "is_stop": true,
+    "exp_exit": 24.92,
+    "holding_days": 14,
+    "tax_rate": 0.2,
+    "events": [
+     {
+      "ex_date": "2025-05-21",
+      "dps": 0.3,
+      "dps_pre": 0.3,
+      "s": 0.0,
+      "shares_before": 1300,
+      "cash": 390.0
+     }
+    ],
+    "div_gross": 390.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 390.0,
+    "div_tax": 78.0,
+    "buy_amt": 25950.5948,
+    "sell_amt": 32396.000000000004,
+    "comm_buy": 6.4876487,
+    "comm_sell": 40.495000000000005,
+    "commission": 46.982648700000006,
+    "pnl": 6710.422551300005,
+    "rec_entry": 19.961996,
+    "rec_exit": 24.92,
+    "rec_shares": 1300,
+    "rec_commission": 46.98,
+    "rec_div_gross": 390.0,
+    "rec_div_tax": 78.0,
+    "rec_pnl": 6710.4226
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 19.961996,
+     "rec": 19.961996,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 24.92,
+     "rec": 24.92,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 1300.0,
+     "rec": 1300.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 390.0,
+     "rec": 390.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 78.0,
+     "rec": 78.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 46.98,
+     "rec": 46.98,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": 6710.42,
+     "rec": 6710.42,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "600392",
+   "entry_date": "2024-11-25",
+   "exit_date": "2024-12-17",
+   "ok": true,
+   "max_diff": 0.0,
+   "calc": {
+    "shares0": 500,
+    "shares_final": 500,
+    "entry_open": 11.47,
+    "exp_entry": 11.471147,
+    "exit_open": 10.93,
+    "exit_close": 10.89,
+    "is_stop": false,
+    "exp_exit": 10.928907,
+    "holding_days": 22,
+    "tax_rate": 0.2,
+    "events": [
+     {
+      "ex_date": "2024-12-06",
+      "dps": 0.02,
+      "dps_pre": 0.02,
+      "s": 0.0,
+      "shares_before": 500,
+      "cash": 10.0
+     }
+    ],
+    "div_gross": 10.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 10.0,
+    "div_tax": 2.0,
+    "buy_amt": 5735.5735,
+    "sell_amt": 5464.4535000000005,
+    "comm_buy": 5.0,
+    "comm_sell": 10.464453500000001,
+    "commission": 15.464453500000001,
+    "pnl": -278.5844534999999,
+    "rec_entry": 11.471147,
+    "rec_exit": 10.928907,
+    "rec_shares": 500,
+    "rec_commission": 15.46,
+    "rec_div_gross": 10.0,
+    "rec_div_tax": 2.0,
+    "rec_pnl": -278.5845
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 11.471147,
+     "rec": 11.471147,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 10.928907,
+     "rec": 10.928907,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 500.0,
+     "rec": 500.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 10.0,
+     "rec": 10.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 2.0,
+     "rec": 2.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 15.46,
+     "rec": 15.46,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": -278.58,
+     "rec": -278.58,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "600353",
+   "entry_date": "2025-05-19",
+   "exit_date": "2025-06-18",
+   "ok": true,
+   "max_diff": 0.0,
+   "calc": {
+    "shares0": 700,
+    "shares_final": 700,
+    "entry_open": 9.59,
+    "exp_entry": 9.590959,
+    "exit_open": 13.21,
+    "exit_close": 12.9,
+    "is_stop": true,
+    "exp_exit": 12.9,
+    "holding_days": 30,
+    "tax_rate": 0.2,
+    "events": [
+     {
+      "ex_date": "2025-05-27",
+      "dps": 0.06,
+      "dps_pre": 0.06,
+      "s": 0.0,
+      "shares_before": 700,
+      "cash": 42.0
+     }
+    ],
+    "div_gross": 42.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 42.0,
+    "div_tax": 8.4,
+    "buy_amt": 6713.6713,
+    "sell_amt": 9030.0,
+    "comm_buy": 5.0,
+    "comm_sell": 14.03,
+    "commission": 19.03,
+    "pnl": 2330.8986999999997,
+    "rec_entry": 9.590959,
+    "rec_exit": 12.9,
+    "rec_shares": 700,
+    "rec_commission": 19.03,
+    "rec_div_gross": 42.0,
+    "rec_div_tax": 8.4,
+    "rec_pnl": 2330.8987
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 9.590959,
+     "rec": 9.590959,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 12.9,
+     "rec": 12.9,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 700.0,
+     "rec": 700.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 42.0,
+     "rec": 42.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 8.4,
+     "rec": 8.4,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 19.03,
+     "rec": 19.03,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": 2330.9,
+     "rec": 2330.9,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "600346",
+   "entry_date": "2024-07-19",
+   "exit_date": "2024-07-23",
+   "ok": true,
+   "max_diff": 0.0,
+   "calc": {
+    "shares0": 1700,
+    "shares_final": 1700,
+    "entry_open": 14.57,
+    "exp_entry": 14.571457,
+    "exit_open": 14.31,
+    "exit_close": 13.65,
+    "is_stop": true,
+    "exp_exit": 13.65,
+    "holding_days": 4,
+    "tax_rate": 0.2,
+    "events": [],
+    "div_gross": 0.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 0.0,
+    "div_tax": 0.0,
+    "buy_amt": 24771.4769,
+    "sell_amt": 23205.0,
+    "comm_buy": 6.192869225000001,
+    "comm_sell": 29.00625,
+    "commission": 35.199119225000004,
+    "pnl": -1601.6760192250015,
+    "rec_entry": 14.571457,
+    "rec_exit": 13.65,
+    "rec_shares": 1700,
+    "rec_commission": 35.2,
+    "rec_div_gross": 0.0,
+    "rec_div_tax": 0.0,
+    "rec_pnl": -1601.676
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 14.571457,
+     "rec": 14.571457,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 13.65,
+     "rec": 13.65,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 1700.0,
+     "rec": 1700.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 35.2,
+     "rec": 35.2,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": -1601.68,
+     "rec": -1601.68,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "600276",
+   "entry_date": "2024-08-13",
+   "exit_date": "2024-09-23",
+   "ok": true,
+   "max_diff": 0.0,
+   "calc": {
+    "shares0": 200,
+    "shares_final": 200,
+    "entry_open": 43.6,
+    "exp_entry": 43.60436,
+    "exit_open": 42.88,
+    "exit_close": 42.71,
+    "is_stop": false,
+    "exp_exit": 42.875712,
+    "holding_days": 41,
+    "tax_rate": 0.1,
+    "events": [],
+    "div_gross": 0.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 0.0,
+    "div_tax": 0.0,
+    "buy_amt": 8720.872,
+    "sell_amt": 8575.1424,
+    "comm_buy": 5.0,
+    "comm_sell": 13.5751424,
+    "commission": 18.5751424,
+    "pnl": -164.30474239999876,
+    "rec_entry": 43.60436,
+    "rec_exit": 42.875712,
+    "rec_shares": 200,
+    "rec_commission": 18.58,
+    "rec_div_gross": 0.0,
+    "rec_div_tax": 0.0,
+    "rec_pnl": -164.3047
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 43.60436,
+     "rec": 43.60436,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 42.875712,
+     "rec": 42.875712,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 200.0,
+     "rec": 200.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 18.58,
+     "rec": 18.58,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": -164.3,
+     "rec": -164.3,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "300347",
+   "entry_date": "2024-08-05",
+   "exit_date": "2024-08-20",
+   "ok": true,
+   "max_diff": 0.0,
+   "calc": {
+    "shares0": 400,
+    "shares_final": 400,
+    "entry_open": 54.6,
+    "exp_entry": 54.60546,
+    "exit_open": 53.0,
+    "exit_close": 50.0,
+    "is_stop": true,
+    "exp_exit": 50.0,
+    "holding_days": 15,
+    "tax_rate": 0.2,
+    "events": [],
+    "div_gross": 0.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 0.0,
+    "div_tax": 0.0,
+    "buy_amt": 21842.184,
+    "sell_amt": 20000.0,
+    "comm_buy": 5.460546000000001,
+    "comm_sell": 25.0,
+    "commission": 30.460546,
+    "pnl": -1872.6445460000011,
+    "rec_entry": 54.60546,
+    "rec_exit": 50.0,
+    "rec_shares": 400,
+    "rec_commission": 30.46,
+    "rec_div_gross": 0.0,
+    "rec_div_tax": 0.0,
+    "rec_pnl": -1872.6445
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 54.60546,
+     "rec": 54.60546,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 50.0,
+     "rec": 50.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 400.0,
+     "rec": 400.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 30.46,
+     "rec": 30.46,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": -1872.64,
+     "rec": -1872.64,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "002272",
+   "entry_date": "2024-08-19",
+   "exit_date": "2024-08-23",
+   "ok": true,
+   "max_diff": 0.0,
+   "calc": {
+    "shares0": 1200,
+    "shares_final": 1200,
+    "entry_open": 5.12,
+    "exp_entry": 5.120512,
+    "exit_open": 4.55,
+    "exit_close": 4.57,
+    "is_stop": false,
+    "exp_exit": 4.549545,
+    "holding_days": 4,
+    "tax_rate": 0.2,
+    "events": [],
+    "div_gross": 0.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 0.0,
+    "div_tax": 0.0,
+    "buy_amt": 6144.6143999999995,
+    "sell_amt": 5459.454000000001,
+    "comm_buy": 5.0,
+    "comm_sell": 10.459454000000001,
+    "commission": 15.459454000000001,
+    "pnl": -700.6198539999989,
+    "rec_entry": 5.120512,
+    "rec_exit": 4.549545,
+    "rec_shares": 1200,
+    "rec_commission": 15.46,
+    "rec_div_gross": 0.0,
+    "rec_div_tax": 0.0,
+    "rec_pnl": -700.6199
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 5.120512,
+     "rec": 5.120512,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 4.549545,
+     "rec": 4.549545,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 1200.0,
+     "rec": 1200.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 15.46,
+     "rec": 15.46,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": -700.62,
+     "rec": -700.62,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  },
+  {
+   "symbol": "600552",
+   "entry_date": "2024-08-12",
+   "exit_date": "2024-09-04",
+   "ok": true,
+   "max_diff": 1.7763568394002505e-15,
+   "calc": {
+    "shares0": 2400,
+    "shares_final": 2400,
+    "entry_open": 10.12,
+    "exp_entry": 10.121011999999999,
+    "exit_open": 16.33,
+    "exit_close": 14.8,
+    "is_stop": true,
+    "exp_exit": 14.8,
+    "holding_days": 23,
+    "tax_rate": 0.2,
+    "events": [],
+    "div_gross": 0.0,
+    "div_tax_at_source": 0.0,
+    "div_taxable": 0.0,
+    "div_tax": 0.0,
+    "buy_amt": 24290.4288,
+    "sell_amt": 35520.0,
+    "comm_buy": 6.0726072,
+    "comm_sell": 44.400000000000006,
+    "commission": 50.472607200000006,
+    "pnl": 11179.0985928,
+    "rec_entry": 10.121012,
+    "rec_exit": 14.8,
+    "rec_shares": 2400,
+    "rec_commission": 50.47,
+    "rec_div_gross": 0.0,
+    "rec_div_tax": 0.0,
+    "rec_pnl": 11179.0986
+   },
+   "diffs": [
+    {
+     "item": "买入价",
+     "calc": 10.121011999999999,
+     "rec": 10.121012,
+     "diff": -1.7763568394002505e-15,
+     "ok": true
+    },
+    {
+     "item": "卖出价",
+     "calc": 14.8,
+     "rec": 14.8,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "股数",
+     "calc": 2400.0,
+     "rec": 2400.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "分红毛额",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "红利税",
+     "calc": 0.0,
+     "rec": 0.0,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "佣金",
+     "calc": 50.47,
+     "rec": 50.47,
+     "diff": 0.0,
+     "ok": true
+    },
+    {
+     "item": "净盈亏",
+     "calc": 11179.1,
+     "rec": 11179.1,
+     "diff": 0.0,
+     "ok": true
+    }
+   ]
+  }
+ ]
+}
