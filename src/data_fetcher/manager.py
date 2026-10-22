@@ -27,6 +27,14 @@ from src.config.settings import DATA_SOURCE_ORDER, DEFAULT_LOOKBACK_DAYS
 class DataManager:
     """统一数据管理器"""
 
+    # 复权口径常量. 三条口径的用途是硬约束, 不要混用:
+    #   RAW  = 不复权, 交易所真实成交价 —— 成交模拟 / 持仓市值 / NAV 唯一合法口径
+    #   QFQ  = 前复权 —— 仅供信号层看图 (均线/突破/量比等比例型指标)
+    #   HFQ  = 后复权 —— 仅用于复权因子交叉校验, 不进任何计算链路
+    ADJUST_RAW = ""
+    ADJUST_QFQ = "qfq"
+    ADJUST_HFQ = "hfq"
+
     def __init__(self):
         self.cache = KLineCache()
         self._sources: dict[str, DataSource] = {
@@ -60,6 +68,23 @@ class DataManager:
         # 归一化到零点: 与 strptime 解析的缓存日期 (零点) 做纯日期比较,
         # 避免 min() 带入 now 的时刻分量导致同日误判过期
         return d.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def get_daily_kline_raw(
+        self,
+        symbol: str,
+        start_date: str = None,
+        end_date: str = None,
+    ) -> Optional[pd.DataFrame]:
+        """不复权(raw)日线 —— 成交模拟、持仓市值、NAV 的唯一合法口径
+
+        raw 是交易所真实成交价, 除权日存在真实跳空 (派息/送转导致).
+        该跳空不能用复权抹平, 也不应被当成暴跌, 正确做法是由事件表
+        (EventBook) 记账: 送转加股数、派息进现金、成本基准同步下移.
+
+        缓存主键已含 adjust 维度, raw 以 adjust='' 独立存储, 与 qfq 行共存,
+        写入 raw 不影响任何现有 qfq 数据.
+        """
+        return self.get_daily_kline(symbol, start_date, end_date, adjust=self.ADJUST_RAW)
 
     def get_daily_kline(
         self,

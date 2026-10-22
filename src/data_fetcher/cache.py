@@ -60,6 +60,13 @@ class KLineCache:
 
             conn.execute("CREATE INDEX IF NOT EXISTS idx_symbol_date ON kline_cache(symbol, date)")
 
+            # 公司行动事件表 (除权除息): 与行情同库, 便于按 (symbol, date) join.
+            # DDL 唯一定义在 event_book.CORPORATE_ACTION_SCHEMA, 此处仅复用,
+            # 保证"事件表存在"这件事由 KLineCache 初始化一并兜住.
+            from .event_book import EventBook
+
+            EventBook.ensure_table(conn)
+
     @staticmethod
     def _pk_has_adjust(conn) -> bool:
         """检测 kline_cache 主键是否含 adjust 列

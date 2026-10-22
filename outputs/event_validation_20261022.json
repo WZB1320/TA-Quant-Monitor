@@ -1,0 +1,313 @@
+{
+  "generated_at": "2026-10-22 13:21:50",
+  "window": [
+    "2023-01-01",
+    "2026-09-28"
+  ],
+  "tolerance_yuan": 0.01,
+  "symbols_total": 46,
+  "symbols_validated": 42,
+  "symbols_failed": [],
+  "symbols_skipped_non_stock": [
+    "sh.000001",
+    "sh.000300",
+    "sz.399673",
+    "sz000977"
+  ],
+  "events_total": 183,
+  "events_verified": 180,
+  "closure_rate_pct": 98.36,
+  "elapsed_sec": 42.7,
+  "unverified_events": [
+    {
+      "symbol": "600519",
+      "ex_date": "2023-12-20",
+      "multiplier": 1.0115382166119777,
+      "mult_baostock": 1.011540686679058,
+      "mult_em": null,
+      "dps_pre": 19.106062932347132,
+      "reason": "未闭合：分红明细无对应事件 → 无法区分派息/配股，D 由乘数反解（假设 s=0）"
+    },
+    {
+      "symbol": "603259",
+      "ex_date": "2025-05-21",
+      "multiplier": 1.0217088529118095,
+      "mult_baostock": 1.0216859627697454,
+      "mult_em": 1.0159162921292753,
+      "dps_pre": 0.9816900000000001,
+      "reason": "未闭合：行情价格调整 1.3314 反而大于公告派息 0.9817 （差 0.3497 元），回购股不参与无法解释该方向，需人工裁决"
+    },
+    {
+      "symbol": "603288",
+      "ex_date": "2026-02-06",
+      "multiplier": 1.0079556354428885,
+      "mult_baostock": 1.0079659881581484,
+      "mult_em": null,
+      "dps_pre": 0.2996123150592367,
+      "reason": "未闭合：分红明细无对应事件 → 无法区分派息/配股，D 由乘数反解（假设 s=0）"
+    }
+  ],
+  "corrected_events": [
+    {
+      "symbol": "002138",
+      "ex_date": "2025-03-31",
+      "share_ratio": 0.0,
+      "transfer_ratio": 0.0,
+      "reason": "已标注：公告派息 0.6000 与行情价格调整 0.5874 差 0.0126 元 → 回购股不参与分配；现金按公告值记账，价格调整按行情乘数"
+    },
+    {
+      "symbol": "002714",
+      "ex_date": "2024-12-30",
+      "share_ratio": 0.0,
+      "transfer_ratio": 0.0,
+      "reason": "已标注：公告派息 0.8348 与行情价格调整 0.8245 差 0.0103 元 → 回购股不参与分配；现金按公告值记账，价格调整按行情乘数"
+    },
+    {
+      "symbol": "002714",
+      "ex_date": "2025-06-26",
+      "share_ratio": 0.0,
+      "transfer_ratio": 0.0,
+      "reason": "已标注：公告派息 0.5743 与行情价格调整 0.5640 差 0.0102 元 → 回购股不参与分配；现金按公告值记账，价格调整按行情乘数"
+    },
+    {
+      "symbol": "002714",
+      "ex_date": "2025-10-16",
+      "share_ratio": 0.0,
+      "transfer_ratio": 0.0,
+      "reason": "已标注：公告派息 0.9275 与行情价格调整 0.9153 差 0.0122 元 → 回购股不参与分配；现金按公告值记账，价格调整按行情乘数"
+    },
+    {
+      "symbol": "300308",
+      "ex_date": "2024-06-06",
+      "share_ratio": 0.0,
+      "transfer_ratio": 0.3917524513491888,
+      "reason": "已修正：明细名义 s=0.4000 与行情差 0.7048 元，按行情反解实际 s=0.3918"
+    },
+    {
+      "symbol": "300673",
+      "ex_date": "2025-06-04",
+      "share_ratio": 0.0,
+      "transfer_ratio": 0.0,
+      "reason": "已标注：公告派息 0.3500 与行情价格调整 0.3388 差 0.0112 元 → 回购股不参与分配；现金按公告值记账，价格调整按行情乘数"
+    },
+    {
+      "symbol": "600519",
+      "ex_date": "2025-06-26",
+      "share_ratio": 0.0,
+      "transfer_ratio": 0.0,
+      "reason": "已标注：公告派息 27.6730 与行情价格调整 27.6007 差 0.0723 元 → 回购股不参与分配；现金按公告值记账，价格调整按行情乘数"
+    }
+  ],
+  "per_symbol": [
+    {
+      "symbol": "000001",
+      "events": 7,
+      "verified": 7
+    },
+    {
+      "symbol": "000100",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "000725",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "000938",
+      "events": 3,
+      "verified": 3
+    },
+    {
+      "symbol": "000977",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "001309",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "002138",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "002272",
+      "events": 1,
+      "verified": 1
+    },
+    {
+      "symbol": "002493",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "002507",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "002648",
+      "events": 3,
+      "verified": 3
+    },
+    {
+      "symbol": "002714",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "002843",
+      "events": 2,
+      "verified": 2
+    },
+    {
+      "symbol": "300119",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "300308",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "300347",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "300433",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "300450",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "300602",
+      "events": 3,
+      "verified": 3
+    },
+    {
+      "symbol": "300673",
+      "events": 2,
+      "verified": 2
+    },
+    {
+      "symbol": "301188",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600031",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "600276",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600346",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600353",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600392",
+      "events": 6,
+      "verified": 6
+    },
+    {
+      "symbol": "600406",
+      "events": 6,
+      "verified": 6
+    },
+    {
+      "symbol": "600426",
+      "events": 6,
+      "verified": 6
+    },
+    {
+      "symbol": "600487",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600519",
+      "events": 7,
+      "verified": 6
+    },
+    {
+      "symbol": "600522",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600549",
+      "events": 6,
+      "verified": 6
+    },
+    {
+      "symbol": "600552",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600660",
+      "events": 6,
+      "verified": 6
+    },
+    {
+      "symbol": "600875",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "600887",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "601012",
+      "events": 2,
+      "verified": 2
+    },
+    {
+      "symbol": "601138",
+      "events": 5,
+      "verified": 5
+    },
+    {
+      "symbol": "603002",
+      "events": 4,
+      "verified": 4
+    },
+    {
+      "symbol": "603259",
+      "events": 6,
+      "verified": 5
+    },
+    {
+      "symbol": "603288",
+      "events": 6,
+      "verified": 5
+    },
+    {
+      "symbol": "603986",
+      "events": 3,
+      "verified": 3
+    }
+  ]
+}
