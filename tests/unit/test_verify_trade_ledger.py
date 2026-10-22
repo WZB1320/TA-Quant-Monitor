@@ -242,6 +242,41 @@ def test_real_one_cent_error_is_caught():
     assert not diffs["佣金"]["ok"]
 
 
+def test_half_cent_boundary_is_not_a_failure():
+    """pnl 精确值落在 x.xx5 时, 浮点表示在边界两侧会导致分位进位方向相反
+
+    全量 233 笔实测有 3 笔如此(-32.935 / -1284.425 / -210.765): 源值差仅
+    1e-14 ~ 4.6e-5, 但各自 round 到分后相差 0.01. 若只按分位比会假报警.
+    """
+    # 构造: 计算值 = -100.0049999(源), 记录值 = -100.005(round 到 4 位)
+    calc = vtl.replay(make_trade(pnl=-100.005), BARS, [])
+    calc["pnl"] = -100.0049999          # 源值差 1e-7, 小于 EXACT_TOL
+    d = {x["item"]: x for x in vtl.diff_items(calc)}
+    assert d["净盈亏"]["ok"], f"半分边界不应误报, raw_diff={d['净盈亏']['raw_diff']}"
+
+
+def test_export_precision_loss_within_1e4_is_not_a_failure():
+    """导出侧 round(pnl, 4) 丢失尾数 4.6e-5 不应误报
+
+    实测最坏一笔 600887 2026-07-17: 源值差 4.6e-5, 叠加半分边界后分位差 0.01.
+    """
+    calc = vtl.replay(make_trade(pnl=-210.765), BARS, [])
+    calc["pnl"] = -210.765046           # 源值差 4.6e-5
+    d = {x["item"]: x for x in vtl.diff_items(calc)}
+    assert d["净盈亏"]["ok"]
+
+
+def test_source_diff_above_1e4_still_falls_back_to_cent_compare():
+    """源值差超过 1e-4 时必须退化为分位比对, 不能无脑放行
+
+    否则改了 EXACT_TOL 就会把 0.0049 级真差异也吞掉.
+    """
+    calc = vtl.replay(make_trade(commission=19.5049, pnl=-520.4951), BARS, [])
+    d = {x["item"]: x for x in vtl.diff_items(calc)}
+    assert abs(d["佣金"]["raw_diff"]) > vtl.EXACT_TOL    # 走的是分位分支
+    assert d["佣金"]["ok"]                          # 分位一致 -> 放行
+
+
 # ─────────────────────────── 数据缺失 ───────────────────────────
 
 def test_missing_bar_raises():

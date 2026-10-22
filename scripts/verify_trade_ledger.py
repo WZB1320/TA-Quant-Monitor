@@ -58,6 +58,12 @@ COMMISSION_RATE = 0.00025  # 佣金 万 2.5
 MIN_COMMISSION = 5.0       # 最低佣金 5 元
 STAMP_TAX = 0.001          # 印花税 千 1, 仅卖出
 TOLERANCE = 0.005          # 到分: 半分钱
+# 源值一致阈值. 取 1e-4 而非 1e-6, 因为要覆盖**导出侧自身的精度损失**:
+#   pnl / dividend_* 是 round(,4) -> 单笔最大损失 5e-5; entry_amount 是 round(,6).
+# 实测最坏一笔源值差 4.6e-5 (600887 2026-07-17), 纯属 round(,4) 的尾数丢失.
+# 1e-4 仍比 1 分钱小 100 倍, 吞不掉真实错误; commission 的 0.0049 级噪声
+# 超过此阈值, 会正确退化到分位比对.
+EXACT_TOL = 1e-4
 
 DEFAULT_DB = os.path.join(ROOT, "data", "kline_cache.db")
 STOP_KEYWORDS = ("止损", "止盈")
@@ -182,10 +188,19 @@ def replay(trade: dict, bars: Dict[str, Bar], events: List) -> dict:
 def diff_items(calc: dict) -> List[dict]:
     """逐项差异 (计算值 − 记录值)
 
-    金额类先 round 到分再比 —— 券商流水本身就记到分, 回测导出侧
-    (run_raw_ledger_backtest.trade_rows) 也已 round(,2). 若直接比浮点,
-    会得到 0.0049 这种"来自导出精度而非账本错误"的伪差异, 反而掩盖真问题.
-    价格类保持 4 位: 导出侧是 round(,4), 量化到分会让 0.0001 的滑点消失.
+    金额类的判定**必须先比源值, 再比到分**, 两步缺一不可:
+
+    - 只比源值(容差 1e-6): 会把导出侧 round(commission,2) 造成的 0.0049
+      判成差异 —— 那是精度损失不是账本错误, 报出来反而掩盖真问题.
+    - 只比到分: 会在**半分边界**假报警. 实测 233 笔中有 3 笔 pnl 精确值落在
+      x.xx5 上(-32.935 / -1284.425 / -210.765), 浮点表示在边界两侧差 1e-14,
+      round 到分的方向相反, 于是报出 0.01 的"差异"—— 实际两值同源.
+
+    所以: 源值一致(<=1e-6) 即通过, 无论分位是否相同; 否则退化为到分比对.
+    这样 1 分钱的真实错误仍会被抓到(它源值就差 0.01 > 1e-6), 而边界
+    舍入噪声不会被误报. 注意不能用 0.01 容差一刀切, 那会连真错一起吞掉.
+
+    价格类不金额化: 导出侧是 round(,4), 量化到分会让 0.0001 的滑点消失.
     """
     def money(x: float) -> float:
         return round(float(x) + 0.0, 2)
@@ -201,11 +216,13 @@ def diff_items(calc: dict) -> List[dict]:
     ]
     out = []
     for name, c, r, is_money in pairs:
+        raw_diff = c - r
         if is_money:
             c, r = money(c), money(r)
         d = c - r
+        ok = abs(raw_diff) <= EXACT_TOL or abs(d) <= TOLERANCE
         out.append({"item": name, "calc": c, "rec": r, "diff": d,
-                    "ok": abs(d) <= TOLERANCE})
+                    "raw_diff": raw_diff, "ok": ok})
     return out
 
 
@@ -284,6 +301,9 @@ def main(argv=None) -> int:
     ap.add_argument("--entry-date", default=None)
     ap.add_argument("--n-div", type=int, default=5, help="跨除权笔数")
     ap.add_argument("--n-plain", type=int, default=5, help="普通笔数")
+    ap.add_argument("--all", dest="all_trades", action="store_true",
+                    help="全量对账(覆盖 --n-div/--n-plain). 233 笔约 10 秒, "
+                         "改口径后应跑这个而不是抽样")
     ap.add_argument("--strict", action="store_true", help="有差异则 exit 1")
     ap.add_argument("--json", dest="json_out", default=None)
     args = ap.parse_args(argv)
@@ -304,6 +324,8 @@ def main(argv=None) -> int:
         if not picked:
             print(f"错误: 未找到 {args.symbol} {args.entry_date}", file=sys.stderr)
             return 2
+    elif args.all_trades:
+        picked = list(trades)
     else:
         picked = pick_trades(trades, args.n_div, args.n_plain)
 
