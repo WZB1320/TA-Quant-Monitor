@@ -33,3 +33,4 @@ data/backtest_memory/
 
 # Frozen data snapshots for backtest baselines (full copy of kline_cache, ~11MB)
 data/baseline_snapshot_*.db
+data/raw_snapshot_*.db
