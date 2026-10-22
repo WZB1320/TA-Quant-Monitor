@@ -25,7 +25,7 @@
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from src.config.settings import CACHE_DB
 
@@ -81,6 +81,16 @@ class CorporateAction:
     def ex_reference_price(self, prev_close: float) -> float:
         """除权参考价: 除权日涨跌停判定基准 = (前收 − D) / (1 + s)"""
         return (prev_close - self.dps_pre) / (1 + self.s)
+
+    def adjust_prev_close(self, raw_prev_close: float) -> float:
+        """把 raw 前收盘价换算成除权日的涨跌停判定基准
+
+        优先用市场乘数 (已含"回购股不参与分配"等实际口径), 缺失时退回公告
+        口径 (前收 − D)/(1+s). 交易所按分公布, 故统一四舍五入到 2 位.
+        """
+        if self.multiplier and self.multiplier > 0:
+            return round(raw_prev_close / self.multiplier, 2)
+        return round(self.ex_reference_price(raw_prev_close), 2)
 
 
 def dividend_tax_rate(holding_days: int) -> float:
@@ -298,11 +308,34 @@ class EventBook:
         ev = self.get(symbol, date)
         if ev is None:
             return raw_prev_close
-        # 交易所公布的除权参考价才是涨跌停基准。优先用市场乘数还原（它已含
-        # 回购股不参与分配等实际口径），缺失时退回公告口径，并按分四舍五入。
-        if ev.multiplier and ev.multiplier > 0:
-            return round(raw_prev_close / ev.multiplier, 2)
-        return round(ev.ex_reference_price(raw_prev_close), 2)
+        return ev.adjust_prev_close(raw_prev_close)
+
+    def bulk(self, symbols: List[str], start: str = None, end: str = None
+             ) -> Dict[str, Dict[str, "CorporateAction"]]:
+        """一次性预加载多只标的的事件, 返回 {symbol: {ex_date: action}}
+
+        成交层按日循环调用, 若每次 get() 都查一次 SQLite, 42 只 × 664 天
+        就是 ~2.8 万次查询 —— 全量回测会被拖垮. 故开局一次性载入内存.
+        """
+        if not symbols:
+            return {}
+        ph = ",".join("?" * len(symbols))
+        sql = f"SELECT {self._SELECT_COLS} FROM corporate_action WHERE symbol IN ({ph})"
+        args = list(symbols)
+        if start:
+            sql += " AND ex_date >= ?"
+            args.append(start)
+        if end:
+            sql += " AND ex_date <= ?"
+            args.append(end)
+        sql += " ORDER BY symbol, ex_date ASC"
+
+        out: Dict[str, Dict[str, "CorporateAction"]] = {s: {} for s in symbols}
+        with sqlite3.connect(self.db_path) as conn:
+            for row in conn.execute(sql, args):
+                a = self._row_to_action(row)
+                out.setdefault(a.symbol, {})[a.ex_date] = a
+        return out
 
     # ---------------------------------------------------------------- 哨兵
 

@@ -71,7 +71,8 @@ class BacktestEngine:
                  trade_regimes: set = None,
                  regime_exit_config: dict = None,
                  dd_protection_config: dict = None,
-                 mean_reversion_config: dict = None):
+                 mean_reversion_config: dict = None,
+                 event_book=None):
         """
         Args:
             initial_capital: 初始资金
@@ -123,6 +124,9 @@ class BacktestEngine:
                 - target_profit_pct: 目标价止盈百分比 (如0.06=盈利6%即平仓)
                 - hard_stop_pct: 硬止损百分比 (如0.08=亏损8%止损, 比趋势跟踪12%更紧)
                 - disable_trailing: True=所有体制禁用trailing (均值回归利润不奔跑)
+            event_book: 公司行动事件表 (EventBook). None=不处理除权除息
+                (向后兼容, 等价改造前行为). 提供时: 成交层用 raw 行情 + 事件日
+                调整股数/成本基准/现金分红, 信号层仍用 qfq 不动.
         """
         self.initial_capital = initial_capital
         self.lookback_days = lookback_days
@@ -176,6 +180,8 @@ class BacktestEngine:
             slippage=slippage,
         )
         self.regime_detector = regime_detector or RegimeDetector()
+        # 公司行动事件表 (复权改造 M2). None → 全部沿用 qfq, 行为与改造前一致.
+        self.event_book = event_book
 
         self.position_mgr: Optional[PositionManager] = None
         self.daily_values: Optional[pd.Series] = None
@@ -185,20 +191,41 @@ class BacktestEngine:
             benchmark_df: Optional[pd.DataFrame] = None,
             start_date: Optional[str] = None,
             end_date: Optional[str] = None,
+            raw_data_map: Optional[Dict[str, pd.DataFrame]] = None,
             ) -> BacktestMetrics:
         """
         执行回测
 
         Args:
             data_map: {symbol: DataFrame} 每只股票的全量日线数据 (含 lookback 预热数据)
+                **信号层口径 = qfq**, 复权改造不改动它.
             benchmark_df: 基准指数的日线数据 (可选)
             start_date: 回测起始日期 (YYYY-MM-DD), 仅该日期后产生交易, 之前仅用于指标预热
             end_date: 回测结束日期 (YYYY-MM-DD)
+            raw_data_map: 成交层行情 (不复权 raw). 提供后成交价/市值/NAV 全部改用
+                raw, 并按 corporate_action 处理送股/分红; 信号层仍读 data_map.
+                None=不启用 (向后兼容, 全部沿用 qfq).
 
         Returns:
             BacktestMetrics 绩效指标
         """
         # ── 初始化 ──
+        # 成交层行情: 给了 raw 就用 raw, 且缺失的标的回退 qfq (避免静默丢交易)
+        raw_mode = raw_data_map is not None
+        price_map = dict(data_map)
+        if raw_mode:
+            for sym, df in (raw_data_map or {}).items():
+                if sym in price_map and df is not None and len(df) > 0:
+                    price_map[sym] = df
+
+        # 除权事件一次性预加载 (按日循环查库会拖垮全量回测)
+        event_map = {}
+        if self.event_book is not None:
+            try:
+                event_map = self.event_book.bulk(list(data_map.keys()))
+            except Exception:
+                event_map = {}
+
         self.position_mgr = PositionManager(
             initial_capital=self.initial_capital,
             position_ratio=self.position_ratio,
@@ -207,6 +234,7 @@ class BacktestEngine:
             atr_stop_mult=self.atr_stop_mult,
             stop_loss_params=self.stop_loss_params,
             regime_exit_config=self.regime_exit_config,
+            event_map=event_map,
         )
 
         # 组合级回撤保护状态 (引擎真实降仓, 非事后净值调整)
@@ -229,6 +257,8 @@ class BacktestEngine:
 
         # 构建交易日历 (O(1) 日期定位)
         calendar = TradingCalendar(data_map)
+        # 成交层日历: 与信号层同表时就是 calendar 本身, 不额外构建 (省一次全量扫描)
+        price_calendar = TradingCalendar(price_map) if raw_mode else calendar
         # 大盘 MA60 过滤器 (pandas rolling, O(N))
         market_filter = MarketFilter(benchmark_df)
         # 信号执行器
@@ -239,6 +269,9 @@ class BacktestEngine:
             group_config=self.group_config,
             market_filter=market_filter,
             calendar=calendar,
+            price_calendar=price_calendar,
+            event_map=event_map,
+            use_atr_ratio=raw_mode,
         )
 
         all_dates = calendar.all_dates
@@ -265,8 +298,16 @@ class BacktestEngine:
             regime = self.regime_detector.detect(benchmark_df, today, calendar=None)
             self.position_mgr.set_regime(regime)
 
+            # 0.5 除权除息处理 —— 必须在止损检查之前 (plan §1.5, 风险 R1/R2).
+            #     顺序对了, ref_price 与价格同步下移, 除权日的价格跳空不会被
+            #     当成暴跌, "除权日误止损"天然不发生, 无需任何特判.
+            #     A股规则: 登记日收盘持有即有权领息, 除权日当天卖出也照领;
+            #     而当日 T+1 买入的仓位此刻尚未建立, 天然无领息权.
+            if event_map:
+                self.position_mgr.apply_corporate_actions(today)
+
             # 1. 检查持仓止损/移动止盈 (自适应倍率)
-            prices_today = calendar.get_closing_prices(data_map, today)
+            prices_today = price_calendar.get_closing_prices(price_map, today)
             for symbol in list(self.position_mgr.open_positions.keys()):
                 if symbol in prices_today:
                     score = self._get_position_score(symbol, data_map, today, calendar)
@@ -290,7 +331,8 @@ class BacktestEngine:
                 prev_signals = pending_signals.pop(prev_date, {})
                 if prev_signals:
                     positions_before = set(self.position_mgr.open_positions.keys())
-                    executor.execute(prev_signals, data_map, prev_date)
+                    executor.execute(prev_signals, data_map, prev_date,
+                                     price_map=price_map if raw_mode else None)
                     # 记录新开仓信号元数据 (用于 outcome 关联)
                     for symbol, result in prev_signals.items():
                         if (symbol in self.position_mgr.open_positions
@@ -372,7 +414,7 @@ class BacktestEngine:
             # 记录 flush 阶段平仓的 outcome
             last_regime = self.regime_detector.detect(benchmark_df, last_bt_date, calendar=None)
             self._record_new_outcomes(last_bt_date, last_regime)
-            prices_last = calendar.get_closing_prices(data_map, last_bt_date)
+            prices_last = price_calendar.get_closing_prices(price_map, last_bt_date)
             values[last_bt_date] = self.position_mgr.total_value(prices_last)
 
         # ── 构建日净值序列 ──

@@ -26,25 +26,39 @@ class SignalExecutor:
                  signal_engine: SignalEngine,
                  group_config: GroupConfig,
                  market_filter: MarketFilter,
-                 calendar: TradingCalendar):
+                 calendar: TradingCalendar,
+                 price_calendar: TradingCalendar = None,
+                 event_map: Dict[str, Dict[str, object]] = None,
+                 use_atr_ratio: bool = False):
         self.broker = broker
         self.position_mgr = position_mgr
         self.signal_engine = signal_engine
         self.group_config = group_config
         self.market_filter = market_filter
         self.calendar = calendar
+        # 成交价日历: 复权改造后成交层用 raw 行情, 与信号层的 qfq 不是同一份
+        # DataFrame. 不传则退化为与信号层同表 (改造前行为).
+        self.price_calendar = price_calendar or calendar
+        self._event_map = event_map or {}
+        # ATR 传递口径: True=传无量纲比率 (成交层 raw 尺度的正确用法);
+        # False=传 qfq 尺度的 ATR 元 (改造前行为). 必须由引擎显式开启 ——
+        # 否则 legacy 臂会被静默改写仓位口径, A/B 对照失去意义.
+        self.use_atr_ratio = use_atr_ratio
 
     def execute(self, signals: Dict[str, SignalResult],
-                data_map: Dict[str, pd.DataFrame], signal_date) -> None:
+                data_map: Dict[str, pd.DataFrame], signal_date,
+                price_map: Dict[str, pd.DataFrame] = None) -> None:
         """执行 pending 信号 (T+1 成交)
 
         Args:
             signals: {symbol: SignalResult} 信号日生成的信号
-            data_map: 全量数据
+            data_map: 全量数据 (信号层 qfq)
             signal_date: 信号生成日期 (T 日)
+            price_map: 成交层行情 (raw). None 则退化为 data_map (改造前行为).
         """
         if not signals:
             return
+        price_map = price_map or data_map
 
         # 按得分绝对值排序, 优先执行强信号
         sorted_signals = sorted(
@@ -56,12 +70,19 @@ class SignalExecutor:
             df = data_map.get(symbol)
             if df is None:
                 continue
+            p_df = price_map.get(symbol)
+            if p_df is None:
+                continue
 
             idx = self.calendar.locate(symbol, signal_date)
             if idx is None:
                 continue
+            # 成交层用 raw 行情自己的索引 (两表日期理论上一致, 但不做假设)
+            p_idx = self.price_calendar.locate(symbol, signal_date)
+            if p_idx is None:
+                continue
 
-            next_info = self.broker.get_next_open(df, idx)
+            next_info = self.broker.get_next_open(p_df, p_idx)
             if next_info is None:
                 continue
 
@@ -76,6 +97,15 @@ class SignalExecutor:
 
             open_price = next_info["open"]
             prev_close = next_info["prev_close"]
+
+            # 除权日涨跌停基准必须用除权参考价, 不能用 raw 前收.
+            # raw 序列在除权日有真实跳空 (派息导致), 沿用 raw 前收会把除权
+            # 跳空误判成跌停而禁止交易 (改造前用 qfq 时跳空被抹平, 歪打正着).
+            ex_date_str = next_date.strftime("%Y-%m-%d") if hasattr(
+                next_date, "strftime") else str(next_date)
+            ev = self._event_map.get(symbol, {}).get(ex_date_str)
+            if ev is not None:
+                prev_close = ev.adjust_prev_close(prev_close)
 
             # 涨跌停检查 (按板块自动推断涨跌停幅度, 如创业板/科创板20%)
             if not self.broker.can_trade(open_price, prev_close, symbol=symbol):
@@ -102,6 +132,7 @@ class SignalExecutor:
         # 故切片取 iloc[:exec_idx] (执行日之前的所有K线), 而非 iloc[:exec_idx+1].
         exec_idx = self.calendar.locate(symbol, next_date)
         exec_atr = None
+        exec_atr_ratio = None
         if exec_idx is not None and exec_idx >= 60:
             exec_df = df.iloc[:exec_idx]
             try:
@@ -112,6 +143,12 @@ class SignalExecutor:
                 exec_atr_ind = exec_ind.get("ATR")
                 if exec_atr_ind:
                     exec_atr = exec_atr_ind.values.get("atr")
+                    # 无量纲化: ATR / close. 信号层在 qfq 尺度算指标, 成交层在
+                    # raw 尺度成交, 二者差一个复权常数 (实测 5~9%). 传比率可让
+                    # 成交层用 raw 的 entry_price 自行还原, 无需记账换算系数.
+                    exec_close = float(exec_df["close"].iloc[-1])
+                    if exec_atr and exec_close > 0:
+                        exec_atr_ratio = exec_atr / exec_close
             except Exception:
                 pass
 
@@ -136,6 +173,7 @@ class SignalExecutor:
             bearish_market=market_bearish,
             signal_strength=signal_strength,
             atr_stop_mult=group_stop_mult,
+            atr_ratio=exec_atr_ratio if self.use_atr_ratio else None,
         )
 
     def _execute_sell(self, symbol: str, result: SignalResult,

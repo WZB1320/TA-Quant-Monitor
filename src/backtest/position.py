@@ -9,6 +9,8 @@ from datetime import date
 from typing import Dict, List, Optional
 from enum import Enum
 
+from src.data_fetcher.event_book import dividend_tax_rate
+
 
 class Side(Enum):
     LONG = "long"
@@ -17,7 +19,27 @@ class Side(Enum):
 
 @dataclass
 class Trade:
-    """单笔交易记录"""
+    """单笔交易记录
+
+    复权改造新增字段 (M2, 详见 outputs/adjust_reform_project_plan_20261022.md):
+        ref_price       除权调整后的成本基准. 与 entry_price 分离:
+                        entry_price 是真实成交价 (算本金), ref_price 是止损/止盈
+                        的百分比基准. 无除权事件时两者相等, 故旧行为不变.
+        entry_amount    开仓本金 = entry_price × 开仓股数. 送股后 shares 会变,
+                        但本金不变, 故 pnl_pct 的分母必须单存.
+        dividend_gross  持仓期内累计**实际到账**的现金分红 (s>0 时是税后值)
+        dividend_taxable 需在卖出时补缴个税的分红额 (s>0 时已在源头代扣, 记 0)
+        dividend_tax    已缴红利税 = 源头代扣 + 平仓时补缴
+
+    记账口径 (易错, 勿改):
+        ref_price 与 P&L **必须解耦**, 二者是不同语义的两个量:
+        - ref_price 按市场乘数**比例**下移 (ref /= mult), 使"百分比回撤"在除权日
+          前后连续 —— 只服务止损/止盈, **不进 P&L**.
+        - P&L 走现金流: 卖出所得 − 开仓本金 + 实收股息 − 红利税 − 费用.
+        二者不能混用: 比例下移量 = ref × D/前收 ≠ 实收股息 D×股数, 混用会
+        漏算股息; 而"先用比例下移的基准、再加回股息"又会重复计算
+        (两种错误都实测过, 单笔偏差达 58 元).
+    """
     symbol: str
     side: Side
     entry_date: date
@@ -32,10 +54,25 @@ class Trade:
     pnl_pct: float = 0.0              # 盈亏百分比
     holding_days: int = 0             # 持仓天数
     highest_price: float = 0.0        # 持仓期间最高价 (用于移动止盈)
+    ref_price: float = 0.0            # 除权调整后的成本基准 (默认=entry_price)
+    entry_amount: float = 0.0         # 开仓本金 (送股后不变)
+    dividend_gross: float = 0.0        # 累计实际到账的现金分红
+    dividend_taxable: float = 0.0     # 待卖出时补缴个税的分红基数
+    dividend_tax: float = 0.0         # 已缴红利税 (源头代扣 + 平仓补缴)
 
     @property
     def is_closed(self) -> bool:
         return self.exit_date is not None
+
+    @property
+    def cost_basis(self) -> float:
+        """百分比判定的成本基准 (无除权事件时 == entry_price)"""
+        return self.ref_price if self.ref_price > 0 else self.entry_price
+
+    @property
+    def dividend_net(self) -> float:
+        """税后分红"""
+        return self.dividend_gross - self.dividend_tax
 
     def close(self, exit_date: date, exit_price: float, signal: str,
               commission: float = 0.0):
@@ -43,13 +80,30 @@ class Trade:
         self.exit_price = exit_price
         self.exit_signal = signal
         self.commission += commission
-        # 计算盈亏
-        if self.side == Side.LONG:
-            self.pnl = (exit_price - self.entry_price) * self.shares - self.commission
-        else:
-            self.pnl = (self.entry_price - exit_price) * self.shares - self.commission
-        self.pnl_pct = self.pnl / (self.entry_price * self.shares) if self.shares > 0 else 0.0
         self.holding_days = (exit_date - self.entry_date).days
+        # 红利税: 持股 ≤1 年时派息环节不扣缴, 卖出时按持股期限补收 ——
+        # 故税率在平仓这一刻才确定 (财税〔2015〕101号 三档 20%/10%/0%).
+        # 用 += : s>0 时送股按面值代扣的税在除权日已计入 dividend_tax.
+        self.dividend_tax += self.dividend_taxable * dividend_tax_rate(self.holding_days)
+        # 计算盈亏 —— **价格口径**: 卖出所得 − 开仓本金 + 股息 − 税 − 费
+        #
+        # 这里刻意**不用 ref_price** 做成本基准. ref_price 是按市场乘数**比例**下移的
+        # (ref /= mult), 比例下移量 = ref × D/前收, 与实收股息 D×股数 并不相等
+        # (持仓越久、涨幅越大, 二者差得越多). 例: 10 元买入涨到 20 元后每股派 1 元,
+        # 比例下移只有 0.5 元, 而实收 1 元 —— 用基准算会把股息算漏.
+        # 反过来若"基准下移 + 再加股息"又会重复计算 (实测一笔差 58 元).
+        # 故 P&L 直接走现金流, ref_price 只服务止损/止盈的百分比语义, 两者互不干扰.
+        proceeds = exit_price * self.shares
+        if self.side == Side.LONG:
+            self.pnl = (proceeds - self.entry_amount - self.commission
+                        + self.dividend_gross - self.dividend_tax)
+        else:
+            # 融券方需支付股息 (本项目无做空路径, 保持对称形式)
+            self.pnl = (self.entry_amount - proceeds - self.commission
+                        - self.dividend_gross)
+        denom = self.entry_amount if self.entry_amount > 0 else (
+            self.entry_price * self.shares)
+        self.pnl_pct = self.pnl / denom if denom > 0 else 0.0
 
 
 class PositionManager:
@@ -113,7 +167,8 @@ class PositionManager:
                  commission_rate: float = 0.0003, slippage: float = 0.0001,
                  risk_per_trade: float = 0.01, atr_stop_mult: float = 2.0,
                  stop_loss_params: dict = None,
-                 regime_exit_config: dict = None):
+                 regime_exit_config: dict = None,
+                 event_map: Dict[str, Dict[str, object]] = None):
         """
         Args:
             initial_capital: 初始资金
@@ -130,6 +185,10 @@ class PositionManager:
                 可含键: disable_trailing(True=禁用移动止盈,仅硬止损), 以及stop_loss_params所有键.
                 例: {"ranging": {"disable_trailing": True, "hard_stop_pct": 0.12}}
                 None=不分体制(向后兼容). 诊断2发现震荡市trailing过紧致踏空78.7%.
+            event_map: 除权事件表 {symbol: {ex_date: CorporateAction}}.
+                None=不处理公司行动 (向后兼容, 等价改造前行为).
+                由 BacktestEngine 从 EventBook 一次性预加载后传入 —— 成交层按日
+                循环调用, 不能每次查库.
         """
         self.initial_capital = initial_capital
         self.cash = initial_capital
@@ -150,10 +209,69 @@ class PositionManager:
         self._open: Dict[str, Trade] = {}
         self.closed_trades: List[Trade] = []
         self._regime: str = "transition"  # 当前市场体制
+        self._event_map = event_map or {}   # {symbol: {ex_date: CorporateAction}}
 
     def set_regime(self, regime: str):
         """设置当前市场体制 (由回测引擎每日更新)"""
         self._regime = regime if regime in self.REGIME_CONFIG else "transition"
+
+    # ── 公司行动 (除权除息) ──
+
+    def apply_corporate_actions(self, today) -> Dict[str, float]:
+        """对当日为除权除息日的持仓施加调整 (必须在止损检查之前调用)
+
+        A股规则: 股权登记日收盘仍持有即有权领息, 除权日当天卖出也不影响.
+        引擎日循环把本调用放在最前 —— 此时持仓是"昨日收盘持有"的集合,
+        而当日 T+1 买入的仓位尚未建立, 天然被排除 (买入日=除权日无领息权).
+
+        处理:
+          - 现金分红: cash += 每股派息 × 除权日持有股数; 税在平仓时才扣
+          - 送转:     shares ×= (1 + s)
+          - ref_price / highest_price 同步按市场乘数下移 —— 否则除权日的
+            价格跳空会被当成暴跌, 直接误触发硬止损 (plan 风险 R1/R2)
+
+        Returns:
+            {symbol: 当日入账的含税分红现金}
+        """
+        ex_date = today.strftime("%Y-%m-%d") if hasattr(today, "strftime") else str(today)
+        credited = {}
+        for symbol, trade in list(self._open.items()):
+            ev = self._event_map.get(symbol, {}).get(ex_date)
+            if ev is None:
+                continue
+            s = ev.s
+            dps = ev.dps_pre if s == 0 else ev.dps_after
+            cash_div = dps * trade.shares
+            trade.dividend_gross += cash_div
+            self.cash += cash_div
+            if s == 0:
+                # 纯派息: 派息时不扣缴, 卖出时按持股期限补收 → 记入待税基数
+                trade.dividend_taxable += cash_div
+            else:
+                # 含送转: 送股按面值 1 元/股征的个税已从现金派息里代扣
+                # (故 dps_after < dps_pre), 不再叠加自算税率.
+                # 但成本基准下移用的是**含税**派息 (交易所除权参考价口径),
+                # 与到账现金的差额即为源头已代扣的税, 须显式记为成本.
+                trade.dividend_tax += max(ev.dps_pre - ev.dps_after, 0.0) * trade.shares
+
+            # 成本基准与最高价下移 (价格侧一律用市场乘数, 不用公告 D/s)
+            mult = getattr(ev, "multiplier", None)
+            if mult and mult > 0:
+                trade.ref_price /= mult
+                if trade.highest_price:
+                    trade.highest_price /= mult
+            elif s:
+                trade.ref_price = (trade.ref_price - dps) / (1 + s)
+                if trade.highest_price:
+                    trade.highest_price = (trade.highest_price - dps) / (1 + s)
+            else:
+                trade.ref_price = max(trade.ref_price - dps, 1e-9)
+                if trade.highest_price:
+                    trade.highest_price = max(trade.highest_price - dps, 1e-9)
+
+            trade.shares = int(round(trade.shares * (1 + s)))
+            credited[symbol] = cash_div
+        return credited
 
     @property
     def _current_config(self) -> dict:
@@ -180,7 +298,8 @@ class PositionManager:
                   bearish_market: bool = False,
                   signal_strength: float = 1.0,
                   stock_regime: str = None,
-                  atr_stop_mult: float = None) -> Optional[Trade]:
+                  atr_stop_mult: float = None,
+                  atr_ratio: float = None) -> Optional[Trade]:
         """
         开多仓 (体制自适应 + ATR 动态仓位)
 
@@ -199,6 +318,11 @@ class PositionManager:
             bearish_market: 大盘是否在MA60下方, 是则仓位减半
             signal_strength: 信号强度加成 (1.0~1.3), 强买入用1.3
             stock_regime: 个股体制 (trending/transition/ranging), 与市场体制取较低值
+            atr_ratio: ATR / close 的**无量纲比率** (复权改造后的推荐入口).
+                信号层在 qfq 尺度算指标, 成交层在 raw 尺度成交, 直接传 ATR 绝对
+                值会差一个复权常数 (实测 5~9%). 传比率可让成交层用 entry_price
+                自行还原成元, 从结构上杜绝"忘记换算"的 bug.
+                与 atr_value 二选一; 同时给定时 atr_ratio 优先.
 
         Returns:
             Trade 或 None
@@ -212,8 +336,9 @@ class PositionManager:
         target_ratio = config["target_ratio"]
         max_per_stock = min(config["max_per_stock"], self.position_ratio)
 
-        # 已有持仓市值 (用持仓的 entry_price 近似, 因为 open_long 时没有全部行情)
-        existing_mv = sum(t.shares * t.entry_price for t in self._open.values())
+        # 已有持仓市值 (用持仓的成本基准近似, 因为 open_long 时没有全部行情)
+        # 送股后 shares 变而 entry_price 不变, 故必须用已除权调整的 cost_basis.
+        existing_mv = sum(t.shares * t.cost_basis for t in self._open.values())
         # 总资产 = 现金 + 已有持仓市值
         # 注意: 不能用 total_value({symbol: entry_price}) — 新股票尚未持仓,
         # market_value 会忽略它, 而已有持仓不在 prices 里也不计市值,
@@ -221,6 +346,10 @@ class PositionManager:
         total_capital = self.cash + existing_mv
         current_exposure = existing_mv / total_capital if total_capital > 0 else 0
         remaining_capacity = max(target_ratio - current_exposure, 0.05)  # 至少留 5% 空间
+
+        # ATR 归一化: 比率 → 与 entry_price 同尺度的元
+        if atr_ratio is not None and atr_ratio > 0:
+            atr_value = atr_ratio * entry_price
 
         if atr_value is not None and atr_value > 0:
             # ── ATR 动态仓位 ──
@@ -276,12 +405,19 @@ class PositionManager:
             shares=shares,
             entry_signal=signal,
             commission=comm,
+            ref_price=entry_price,                 # 无除权事件时 == entry_price
+            entry_amount=shares * entry_price,      # 送股后 shares 变, 本金不变
         )
         # 保存 ATR 止损参数
         stop_mult = atr_stop_mult if atr_stop_mult is not None else self.atr_stop_mult
         if atr_value is not None:
             trade._atr_stop_price = entry_price - atr_value * stop_mult
             trade._atr_value = atr_value
+            trade._atr_stop_mult = stop_mult
+        if atr_ratio is not None:
+            # 记录比率: 除权后 ref_price 变化, 止损距离须由 ref_price 现算,
+            # 不能沿用开仓时的绝对 ATR (那是旧尺度的元).
+            trade._atr_ratio = atr_ratio
             trade._atr_stop_mult = stop_mult
         self._open[symbol] = trade
         return trade
@@ -308,8 +444,8 @@ class PositionManager:
 
         trade.close(exit_date, exit_price, signal, commission=total_comm)
 
-        # 回笼资金
-        self.cash += (revenue - total_comm)
+        # 回笼资金 (红利税在此补缴: A股持股≤1年时派息环节不扣, 卖出时才收)
+        self.cash += (revenue - total_comm - trade.dividend_tax)
 
         self.closed_trades.append(trade)
         return trade
@@ -341,13 +477,32 @@ class PositionManager:
             symbol=symbol, side=trade.side,
             entry_date=trade.entry_date, entry_price=trade.entry_price,
             shares=sell_shares, entry_signal=trade.entry_signal,
+            ref_price=trade.ref_price or trade.entry_price,
+            entry_amount=trade.entry_price * sell_shares,
+            highest_price=trade.highest_price,
         )
+        # 累计分红按卖出股数比例拆分: 卖出部分对应的股息由本次平仓计税,
+        # 剩余部分留给仍在持有的仓位 (未来平仓时再按那时的持股期限计税).
+        # 已知简化: 同一笔持仓若分多次卖出, 各批持股天数不同, 严格应按 FIFO
+        # 分档计税. 20%/10% 在小额股息上是二阶小量, 本期按整笔 holding_days 处理.
+        if trade.shares > 0:
+            share_of_div = trade.dividend_gross * (sell_shares / trade.shares)
+        else:
+            share_of_div = 0.0
+        partial.dividend_gross = share_of_div
+        trade.dividend_gross -= share_of_div
+        # 待税基数与已代扣税额按同比例拆分 (partial.close 时才计补充征税)
+        partial.dividend_taxable = trade.dividend_taxable * (sell_shares / trade.shares)
+        trade.dividend_taxable -= partial.dividend_taxable
+        partial.dividend_tax = trade.dividend_tax * (sell_shares / trade.shares)
+        trade.dividend_tax -= partial.dividend_tax
+
         revenue = sell_shares * exit_price
         comm = max(revenue * self.commission_rate, 5)
         stamp = revenue * 0.001  # 印花税千1, 仅卖出收取
         total_comm = comm + stamp
         partial.close(exit_date, exit_price, signal, commission=total_comm)
-        self.cash += (revenue - total_comm)
+        self.cash += (revenue - total_comm - partial.dividend_tax)
         self.closed_trades.append(partial)
         # 减少open Trade股数 (entry_price/highest_price/_atr_*不变, 止损逻辑对剩余持仓延续)
         trade.shares -= sell_shares
@@ -434,6 +589,10 @@ class PositionManager:
         if trade is None:
             return None
 
+        # 成本基准: 除权后 ref_price 已下移, 所有百分比判定都基于它.
+        # 无除权事件时 ref_price == entry_price, 与改造前逐位一致.
+        base = trade.cost_basis
+
         # 更新最高价
         if current_price > trade.highest_price:
             trade.highest_price = current_price
@@ -445,8 +604,8 @@ class PositionManager:
 
         # ── 安全网: 硬止损 (所有模式永远生效) ──
         hard_stop_pct = effective_params['hard_stop_pct']
-        if current_price <= trade.entry_price * (1 - hard_stop_pct):
-            pnl_pct = (current_price - trade.entry_price) / trade.entry_price
+        if current_price <= base * (1 - hard_stop_pct):
+            pnl_pct = (current_price - base) / base
             return self.close_position(symbol, current_date, current_price,
                                        f"安全网硬止损 ({pnl_pct*100:.1f}%, 保本底线)")
 
@@ -455,18 +614,24 @@ class PositionManager:
         # target_profit_pct > 0 时启用, 在 trailing 检查之前触发.
         target_profit_pct = effective_params.get('target_profit_pct', 0)
         if target_profit_pct > 0:
-            profit_pct = (current_price - trade.entry_price) / trade.entry_price
+            profit_pct = (current_price - base) / base
             if profit_pct >= target_profit_pct:
                 return self.close_position(symbol, current_date, current_price,
                                            f"均值回归止盈 ({profit_pct*100:.1f}%, 目标{target_profit_pct*100:.0f}%)")
 
         # 获取 ATR 止损距离
-        atr_val = getattr(trade, '_atr_value', None)
+        # 复权改造: 优先用比率 (ATR/close) × 当前成本基准现算成元. 这样除权后
+        # 止损距离自动随 ref_price 下移, 不需要在除权处理里逐个修正止损价.
+        atr_ratio = getattr(trade, '_atr_ratio', None)
         # 使用交易级别的 atr_stop_mult (分组专属), 否则用全局默认值
         trade_stop_mult = getattr(trade, '_atr_stop_mult', self.atr_stop_mult)
+        if atr_ratio is not None and atr_ratio > 0:
+            atr_val = atr_ratio * base
+        else:
+            atr_val = getattr(trade, '_atr_value', None)
         if atr_val is not None and atr_val > 0:
             # ── 盈利自适应移动止盈倍率 (参数可配置, 用于敏感性扫描) ──
-            profit_pct = (current_price - trade.entry_price) / trade.entry_price
+            profit_pct = (current_price - base) / base
             t1 = effective_params['trail_tier1_threshold']
             t2 = effective_params['trail_tier2_threshold']
             if profit_pct > t2:
@@ -480,13 +645,13 @@ class PositionManager:
             trailing_dist = atr_val * trailing_mult    # 移动止盈用自适应倍率
 
             # ATR 硬止损
-            if current_price <= trade.entry_price - stop_dist:
-                pnl_pct = (current_price - trade.entry_price) / trade.entry_price
+            if current_price <= base - stop_dist:
+                pnl_pct = (current_price - base) / base
                 return self.close_position(symbol, current_date, current_price,
                                            f"ATR硬止损 ({pnl_pct*100:.1f}%, ATR={atr_val:.2f})")
 
             # ATR 移动止盈 (盈利自适应倍率) — 震荡市可禁用
-            if not disable_trailing and trade.highest_price > trade.entry_price:
+            if not disable_trailing and trade.highest_price > base:
                 if current_price <= trade.highest_price - trailing_dist:
                     drawdown = (current_price - trade.highest_price) / trade.highest_price
                     return self.close_position(symbol, current_date, current_price,
@@ -494,12 +659,12 @@ class PositionManager:
                                                f"回撤{drawdown*100:.1f}%, 盈利{profit_pct*100:.1f}%)")
         else:
             # 无 ATR 时回退到固定百分比 (参数可配置)
-            pnl_pct = (current_price - trade.entry_price) / trade.entry_price
+            pnl_pct = (current_price - base) / base
             if pnl_pct <= -effective_params['no_atr_hard_stop_pct']:
                 return self.close_position(symbol, current_date, current_price,
                                            f"硬止损 ({pnl_pct*100:.1f}%)")
             # 移动止盈 — 震荡市可禁用
-            if not disable_trailing and trade.highest_price > trade.entry_price:
+            if not disable_trailing and trade.highest_price > base:
                 drawdown = (current_price - trade.highest_price) / trade.highest_price
                 if drawdown <= -effective_params['no_atr_trail_drawdown']:
                     return self.close_position(symbol, current_date, current_price,
