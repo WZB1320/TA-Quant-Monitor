@@ -1,0 +1,3 @@
+﻿date,symbol,side,price,shares,amount,commission,stamp_tax,transfer_fee,other_fee,settlement
+2026-10-20,600887,buy,26.15,1000,26150.0,6.54,0,0.26,0,-26156.8
+2026-11-03,600887,sell,27.8,1000,27800.0,6.95,13.9,0.28,0,27778.87
