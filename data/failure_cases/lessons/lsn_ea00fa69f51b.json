@@ -1,0 +1,62 @@
+{
+  "lesson_id": "lsn_ea00fa69f51b",
+  "created_at": "2026-11-03T11:50:45",
+  "updated_at": "2026-11-05T15:19:29",
+  "linked_cases": [
+    "fc_57d61a33eef1",
+    "fc_021af582d067"
+  ],
+  "support_count": 2,
+  "scope": {
+    "group": "消费稳健型",
+    "regime": null,
+    "strategy_mode": null
+  },
+  "failure_level": "regime_mismatch",
+  "failure_flags_summary": [
+    "alpha_negative",
+    "regime_alpha_negative",
+    "stop_loss_high",
+    "regime_dominated"
+  ],
+  "root_cause": "【事实】2026-01-05~2026-06-30 组合回测: 消费稳健型 5% 权重(¥5,000) 仅成交 1 笔、收益 -0.86%、组 alpha -6.40%; 医药创新型 5% 权重 0 笔成交、组 alpha -5.55%。同期独立满仓回测(¥100,000): 消费 7 笔/alpha -11.03%, 医药 4 笔/alpha -9.98%。【机制】position_ratio=0.3 时单笔目标仓位仅 ¥1,425, 可买最高价 ¥14.25 (max_affordable_price), 低于 A 股常见价格中位数, 100 股最小手数约束使信号被系统性跳过(capital_constrained=True)。【判定】该组在组合权重下结构性无法交易, 且满仓口径下 alpha 同为负; 失败性质是「资金配置错配」而非「策略参数失当」, 调 score_threshold 无效(已 A/B 验证 alpha 变化 -0.002pp)。",
+  "rule": "当某组在组合权重下 capital_constrained=True (可买最高价 <¥20) 且满仓口径 alpha 为负时, 不应继续在其上做参数微调; 应把该组权重让渡给满仓 alpha 为正的有效组, 保持总仓位不变。本例: 消费稳健型 5%→0%, 差额转入科技成长型 (40%→45%)。禁止把它当作「趋势市乱交易」用 trade_regimes 收紧, 也禁止只调 score_threshold。",
+  "rule_action": {
+    "type": "rebalance_weight",
+    "target": "消费稳健型",
+    "value": 0.0,
+    "compensate": "科技成长型"
+  },
+  "do_not_repeat": [
+    "对 capital_constrained=True 的组继续做 score_threshold 等参数微调",
+    "把「资金不足凑不齐 100 股」误判为「策略参数失当」",
+    "用 trade_regimes 收紧来修复结构性空仓问题"
+  ],
+  "confidence": "low",
+  "validation_status": "validated",
+  "applied_by": "manual_seed_before_evolution_ab",
+  "applied_at": "2026-11-03T14:35:25",
+  "validated_by": "bt_20261104_155402_e5be3691",
+  "validated_at": "2026-11-04T15:54:02",
+  "validation_notes": "A/B verdict=win, group_alpha_delta=+0.0253, 权重再平衡, 以组合级 alpha 判定: 候选 alpha 较基线提升 +0.0253 (>= 0.01)",
+  "ai_drafted": true,
+  "promoted_at": "2026-11-05T15:19:29",
+  "promoted_by": "promote_lsn_ea00fa69f51b",
+  "inconclusive_count": 0,
+  "last_inconclusive_at": null,
+  "invalidation_criteria": [
+    {
+      "field": "capital_per_group",
+      "op": ">=",
+      "value": 10000,
+      "scope": {"group": "消费稳健型"}
+    },
+    {
+      "field": "portfolio_weight",
+      "op": ">=",
+      "value": 0.1,
+      "scope": {"group": "消费稳健型"}
+    }
+  ],
+  "_criteria_note": "前提失效条件: 消费组资金 ≥ ¥10000 或权重恢复 ≥ 10% 时, 教训根因(资金约束)消失, 应重新评估该组策略而非继续保留权重归零"
+}

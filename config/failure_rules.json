@@ -1,0 +1,76 @@
+{
+  "_comment": "失效案例库 L1 判定规则 (P1/P3). 阈值与规则开关可迭代, 修改后下一次回测/扫描即时生效.",
+  "version": 2,
+  "thresholds": {
+    "alpha_negative": 0.0,
+    "stop_loss_high": 0.40,
+    "drawdown_deep": 0.12,
+    "overfit_gap": 0.10,
+    "impl_gap_large": 0.05,
+    "regime_dominated": 0.70,
+    "regime_mismatch_share": 0.50,
+    "regime_mismatch_alpha": -0.02,
+    "param_scan_flat_corr": 0.30,
+    "param_scan_clear_corr": 0.70,
+    "stock_pool_underperform_ratio": 0.60,
+    "structure_stop_loss_ratio": 0.50,
+    "structure_ma_breakdown_ratio": 0.60,
+    "param_best_gap": 0.03,
+    "overfit_train_alpha": 0.05,
+    "overfit_train_win_rate": 0.60,
+    "overfit_test_win_rate": 0.45
+  },
+  "entry_flags": [
+    "alpha_negative",
+    "train_test_dual_negative",
+    "stop_loss_high",
+    "drawdown_deep",
+    "overfit_gap",
+    "regime_alpha_negative",
+    "impl_gap_large"
+  ],
+  "rules": [
+    {
+      "id": "R1",
+      "failure_level": "stock_pool",
+      "priority": 1,
+      "enabled": true,
+      "_note": "选股域: train/test 双负 + 扫描全组合负 + 方向性不明确 + >=60% 个股跑输基准"
+    },
+    {
+      "id": "R2",
+      "failure_level": "regime_mismatch",
+      "priority": 2,
+      "enabled": true,
+      "_note": "体制失配: 主导体制占比>=50% 且该体制下 alpha<=-2% → 策略与市场体制不匹配 (P3 启用)"
+    },
+    {
+      "id": "R3",
+      "failure_level": "structure",
+      "priority": 3,
+      "enabled": true,
+      "_note": "策略结构: 非双负 + 扫描方向明确 + 最优组合测试窗仍负 + 止损/破位主导"
+    },
+    {
+      "id": "R4",
+      "failure_level": "param",
+      "priority": 4,
+      "enabled": true,
+      "_note": "参数: 扫描方向明确 + 存在正解 + 当前参数显著差于最优(>=3pp)"
+    },
+    {
+      "id": "R5",
+      "failure_level": "overfit",
+      "priority": 5,
+      "enabled": true,
+      "_note": "过拟合: 训练窗好/测试窗崩, 或实盘-回测差距过大"
+    },
+    {
+      "id": "R6",
+      "failure_level": "unknown",
+      "priority": 6,
+      "enabled": true,
+      "_note": "兜底: 字段不足或规则未覆盖, 待人工判定"
+    }
+  ]
+}

@@ -14,6 +14,7 @@
 
 回归闸口：与重构前同参数逐日比对 daily_values 必须完全一致。
 """
+import copy
 import logging
 import os
 import sys
@@ -33,6 +34,11 @@ from src.config.runtime_mode import set_mode, RuntimeMode, get_mode
 from src.backtest import BacktestEngine
 from src.backtest.metrics import compute_metrics
 from src.backtest.rotation_strategy import RotationStrategy
+from src.memory.failure_case import (
+    FailureCaseRecorder, compute_stock_pool_snapshot, make_backtest_source_ref,
+)
+from src.memory.positive_case import PositiveCaseRecorder
+from src.memory.strategy_memory import compute_strategy_version
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +104,115 @@ def _load_portfolio_config() -> dict:
     return cfg
 
 
+def _build_group_params_snapshot(*, group_name: str, group_cfg: dict, strategy_mode: str,
+                                 group_capital: float, atr_stop_mult: Optional[float],
+                                 mean_reversion_config: Optional[dict],
+                                 forced_regime: str, trade_regimes, dd_config: dict,
+                                 weight: float, mode: str) -> dict:
+    """构建该组本次回测的完整参数快照 (L1 记录的 strategy_version 来源)"""
+    return {
+        "group_name": group_name,
+        "group_config": group_cfg or {},
+        "engine": {
+            "initial_capital": group_capital,
+            "position_ratio": 0.3,
+            "risk_per_trade": 0.05,
+            # 最小手数(100股)约束诊断: position_ratio=0.3 时单笔目标仓位
+            # ≈ capital*0.3*0.95, 可买最高价 = 该值/100. A 股常见价格中位数
+            # 约 ¥15~20, 若可买最高价 <20 元则多数股票凑不齐 1 手, 信号被系统性跳过.
+            "max_affordable_price": round((group_capital * 0.3 * 0.95) / 100, 2),
+            "capital_constrained": (group_capital * 0.3 * 0.95) / 100 < 20.0,
+            "atr_stop_mult": atr_stop_mult,
+            "signal_dedup_days": 5,
+            "forced_regime": forced_regime,
+            "trade_regimes": sorted(trade_regimes) if trade_regimes else None,
+            "dd_protection": dd_config,
+            "mean_reversion": mean_reversion_config,
+        },
+        "portfolio": {"weight": weight, "mode": mode},
+        "strategy_mode": strategy_mode,
+    }
+
+
+def _record_group_cases(recorder: FailureCaseRecorder, *, run_id: Optional[str],
+                        group_name: str, group_codes: list, data_map: dict,
+                        bench_df, daily_values, trades: list, group_capital: float,
+                        strategy_mode: str, params_snapshot: dict,
+                        regime_dist: Optional[dict], mode: str,
+                        regime_slices: Optional[dict] = None,
+                        positive_recorder: Optional[PositiveCaseRecorder] = None) -> None:
+    """记录单组回测的 L1 失效案例 (未命中 entry_flags 时由 recorder 自行跳过)
+    与 P5 正样本轨迹 (未命中正样本标签时由 positive_recorder 自行跳过)
+    """
+    if daily_values is None or len(daily_values) == 0:
+        return
+
+    start = str(daily_values.index[0])[:10]
+    end = str(daily_values.index[-1])[:10]
+
+    bench_series = None
+    if bench_df is not None:
+        bench_series = BacktestEngine._align_benchmark(bench_df, daily_values.index)
+    metrics = compute_metrics(
+        daily_values=daily_values,
+        trades=trades,
+        initial_capital=group_capital,
+        benchmark_values=bench_series,
+    )
+
+    sub_map = {c: data_map[c] for c in group_codes if c in data_map}
+    stock_pool_snapshot = compute_stock_pool_snapshot(
+        sub_map, bench_df, start, end, stock_codes=group_codes)
+
+    recorder.record_backtest(
+        source_ref={"run_id": run_id, "group": group_name, "mode": mode},
+        group_name=group_name,
+        stock_codes=group_codes,
+        window={"start": start, "end": end},
+        strategy_mode=strategy_mode,
+        params=params_snapshot,
+        metrics=metrics,
+        trades=trades,
+        benchmark_return=metrics.benchmark_return,
+        regime_dist=regime_dist,
+        regime_slices=regime_slices,
+        stock_pool_snapshot=stock_pool_snapshot,
+    )
+
+    if positive_recorder is not None:
+        positive_recorder.record_backtest(
+            source_ref={"run_id": run_id, "group": group_name, "mode": mode},
+            group_name=group_name,
+            stock_codes=group_codes,
+            window={"start": start, "end": end},
+            strategy_mode=strategy_mode,
+            params=params_snapshot,
+            metrics=metrics,
+            trades=trades,
+            benchmark_return=metrics.benchmark_return,
+            regime_dist=regime_dist,
+            regime_slices=regime_slices,
+        )
+
+
+def _group_metrics_snapshot(daily_values, trades, group_capital, bench_df) -> dict:
+    """单组精简指标快照 (供 P8 组级 A/B 对比)。无数据时返回 None 值占位。"""
+    if daily_values is None or len(daily_values) < 2:
+        return {"alpha": None, "total_return": None, "trade_count": len(trades or [])}
+    bench_series = None
+    if bench_df is not None:
+        bench_series = BacktestEngine._align_benchmark(bench_df, daily_values.index)
+    m = compute_metrics(
+        daily_values=daily_values, trades=trades or [],
+        initial_capital=group_capital, benchmark_values=bench_series,
+    )
+    return {
+        "alpha": round(m.alpha, 6),
+        "total_return": round(m.total_return, 6),
+        "trade_count": m.trade_count,
+    }
+
+
 class BacktestRequest(BaseModel):
     groups: list[str] = []          # 展示分组(仅过滤前端交易明细展示, 不影响回测参与)
     mode: str = "base"              # base / trending / ranging
@@ -110,11 +225,21 @@ class BacktestRequest(BaseModel):
 def run_portfolio_backtest(
     req: BacktestRequest,
     on_progress: Optional[Callable[[int, str], None]] = None,
+    config_override: Optional[dict] = None,
+    record_memory: bool = True,
 ) -> dict:
     """同步执行 P5 组合回测（阻塞直到完成）。
 
     纯移动自 routers/backtest.py::run_backtest 主体，逻辑与返回体一字未改。
     进度上报改为可选回调，不传则静默。
+
+    P8 扩展参数 (仅进化 A/B 使用, 正常调用方无需关心):
+        config_override: 候选参数覆盖
+            {"groups": {组名: 完整组配置dict},       # 替换 gc._groups[组名]
+             "atr_override": {组名: atr值},           # 合并进组合级 atr_override
+             "weights": {组名: 权重}}                 # 合并进组合级权重
+        record_memory: False 时不写 L1/正样本/运行基线/谱系/建议验证
+                       (候选参数跑出的结果不属于生产轨迹, 不应污染记忆层)
     """
     def _progress(p: int, text: Optional[str] = None) -> None:
         if on_progress is not None:
@@ -124,6 +249,11 @@ def run_portfolio_backtest(
     # 避免污染实时信号数据, 且避免上次回测/分析的去重记录影响本次回测
     prev_mode = get_mode()
     set_mode(RuntimeMode.BACKTEST)
+
+    # P8: config_override 需要临时替换 gc._groups 中的组配置, 记录原始值供 finally 恢复
+    override_groups = (config_override or {}).get("groups") or {}
+    _gc_backup: dict = {}
+    gc: Optional[GroupConfig] = None
 
     try:
         _progress(0, "加载自选股...")
@@ -138,6 +268,10 @@ def run_portfolio_backtest(
         # 不读写该文件; 删除只会摧毁 LIVE 模式积累的跨会话去重数据, 导致实时信号重复触发.
 
         gc = GroupConfig()
+        if override_groups:
+            import copy as _copy
+            for g_name, g_cfg in override_groups.items():
+                _gc_backup[g_name] = _copy.deepcopy(gc._groups.get(g_name))
 
         # 筛选展示语义: req.groups 仅用于前端交易明细展示过滤, 不影响回测参与.
         # 回测始终跑全部活跃组(权重>0), 确保收益与P5基线一致, 避免选子集导致现金稀释.
@@ -217,6 +351,21 @@ def run_portfolio_backtest(
 
         # 组合配置: 从 strategy_config.json 读取 (单源, 配置页改动即时生效)
         pc = _load_portfolio_config()
+
+        # P8: 候选参数覆盖 (仅进化 A/B 使用) — 合并组合级 weights / atr_override / regimes_cfg
+        if config_override:
+            for key in ("weights", "atr_override"):
+                ov = config_override.get(key)
+                if isinstance(ov, dict):
+                    pc[key].update(ov)
+            # regimes_cfg: 候选覆盖 (value 是 list, 引擎内部转 set)
+            ov_regimes = config_override.get("regimes_cfg")
+            if isinstance(ov_regimes, dict):
+                for g, regimes in ov_regimes.items():
+                    if regimes is None:
+                        pc["regimes_cfg"][g] = None
+                    else:
+                        pc["regimes_cfg"][g] = set(regimes)
         PORTFOLIO_WEIGHTS = pc["weights"]
         REGIMES_CFG = pc["regimes_cfg"]
         ATR_OVERRIDE = pc["atr_override"]
@@ -239,6 +388,9 @@ def run_portfolio_backtest(
         all_closed_trades = []
         all_open_positions = {}
         total_invested = 0
+        failure_recorder = FailureCaseRecorder()
+        positive_recorder = PositiveCaseRecorder()
+        group_metrics_map: dict = {}
 
         for idx, group_name in enumerate(active_groups):
             weight = weights_normalized[group_name]
@@ -258,9 +410,22 @@ def run_portfolio_backtest(
             # 改用 reload() 原地刷新同一单例, 使下方读取的分组参数真实生效.
             gc.reload()
 
+            # P8: 候选组配置覆盖 — reload 从磁盘重读会覆盖预置值, 必须在 reload 之后替换;
+            # 引擎运行时实时读取 gc._groups, 就地替换才能让候选参数真实生效
+            if group_name in override_groups:
+                gc._groups[group_name] = copy.deepcopy(override_groups[group_name])
+
             # 读取该组的策略配置
             group_cfg = gc._groups.get(group_name, {})
             strategy_mode = group_cfg.get("strategy_mode", "trend_following")
+
+            # 失效案例 L1 记录的临时载体 (两个策略分支各自填充)
+            group_daily = None
+            group_trades = []
+            group_regime_dist = None
+            group_run_id = None
+            group_atr_mult = None
+            group_mr_config = None
 
             if strategy_mode == "rotation":
                 # ── 动量轮动策略 (机械组专用) ──
@@ -286,6 +451,11 @@ def run_portfolio_backtest(
                 all_closed_trades.extend(rot_result["closed_trades"])
                 all_open_positions.update(rot_result["open_positions"])
 
+                # 失效案例: 轮动组没有 BacktestEngine, 使用独立 run_id
+                group_daily = rot_result["daily_values"]
+                group_trades = list(rot_result["closed_trades"])
+                group_run_id = None  # 由 recorder 侧 source_ref 生成
+
             else:
                 # ── 标准趋势跟踪/均值回归策略 ──
                 # 桥接: strategy_config.mean_reversion_exit → BacktestEngine.mean_reversion_config
@@ -296,7 +466,7 @@ def run_portfolio_backtest(
                     lookback_days=120,
                     position_ratio=0.3,
                     commission_rate=0.00025,
-                    stamp_tax=0.001,
+                    stamp_tax=0.0005,
                     slippage=0.0001,
                     signal_dedup_days=5,
                     risk_per_trade=0.05,
@@ -318,6 +488,15 @@ def run_portfolio_backtest(
                     end_date=end,
                 )
 
+                # 失效案例: 采集该组的净值/交易/体制分布
+                group_daily = group_engine.daily_values
+                group_trades = list(group_engine.position_mgr.closed_trades)
+                group_regime_dist = getattr(group_engine, "regime_dist", None)
+                group_regime_slices = getattr(group_engine, "regime_slices", None)
+                group_run_id = getattr(group_engine.memory, "run_id", None)
+                group_atr_mult = ATR_OVERRIDE.get(group_name, 2.0)
+                group_mr_config = mean_reversion_config
+
                 # 合并 daily_values (各组净值按日期对齐相加)
                 if group_engine.daily_values is not None:
                     if portfolio_daily_values is None:
@@ -329,6 +508,51 @@ def run_portfolio_backtest(
                 # 收集交易记录 (含部分平仓的回撤保护降仓记录)
                 all_closed_trades.extend(group_engine.position_mgr.closed_trades)
                 all_open_positions.update(group_engine.position_mgr.open_positions)
+
+            # 单组指标快照 (无论是否 record_memory 都计算, 供 P8 组级 A/B)
+            group_metrics_map[group_name] = _group_metrics_snapshot(
+                daily_values=group_daily, trades=group_trades,
+                group_capital=group_capital, bench_df=bench_df,
+            )
+
+            # 失效案例 L1 + 正样本: 记录该组回测结果 (record_memory=False 时跳过;
+            # 记录失败绝不影响主流程)
+            if record_memory:
+                try:
+                    params_snapshot = _build_group_params_snapshot(
+                        group_name=group_name,
+                        group_cfg=group_cfg,
+                        strategy_mode=strategy_mode,
+                        group_capital=group_capital,
+                        atr_stop_mult=group_atr_mult,
+                        mean_reversion_config=group_mr_config,
+                        forced_regime=forced_regime,
+                        trade_regimes=REGIMES_CFG.get(group_name),
+                        dd_config=DD_CONFIG,
+                        weight=weight,
+                        mode=req.mode,
+                    )
+                    if group_run_id is None:
+                        group_run_id = make_backtest_source_ref()["run_id"]
+                    _record_group_cases(
+                        failure_recorder,
+                        run_id=group_run_id,
+                        group_name=group_name,
+                        group_codes=group_codes,
+                        data_map=data_map,
+                        bench_df=bench_df,
+                        daily_values=group_daily,
+                        trades=group_trades,
+                        group_capital=group_capital,
+                        strategy_mode=strategy_mode,
+                        params_snapshot=params_snapshot,
+                        regime_dist=group_regime_dist,
+                        regime_slices=group_regime_slices,
+                        mode=req.mode,
+                        positive_recorder=positive_recorder,
+                    )
+                except Exception:
+                    logger.warning("失效案例/正样本记录失败 (group=%s)", group_name, exc_info=True)
 
             _progress(65 + int((idx + 1) / len(active_groups) * 20))
 
@@ -447,10 +671,89 @@ def run_portfolio_backtest(
                 bench_dates.append(str(d)[:10])
                 bench_values.append(round(float(v), 6))
 
+        # P4/P7/P8: 计算组合级运行标识 (无论是否 record_memory 都计算,
+        # 进化 A/B 需要从返回值拿 run_id 与 strategy_version)
+        outcome_metrics = {
+            "alpha": round(metrics.alpha, 6),
+            "total_return": round(metrics.total_return, 6),
+            "annual_return": round(metrics.annual_return, 6),
+            "max_drawdown": round(metrics.max_drawdown, 6),
+            "sharpe_ratio": round(metrics.sharpe_ratio, 4),
+            "win_rate": round(metrics.win_rate, 4),
+            "trade_count": metrics.trade_count,
+            "benchmark_return": round(metrics.benchmark_return, 6),
+        }
+        outcome_window = {
+            "start": str(daily_values.index[0])[:10],
+            "end": str(daily_values.index[-1])[:10],
+        }
+
+        # P7 版本谱系: 组合级版本 = mode + 组合配置 + 各组 strategy_mode
+        portfolio_version_params = {
+            "mode": req.mode,
+            "portfolio_config": {
+                "weights": dict(PORTFOLIO_WEIGHTS),
+                "regimes_filter": {k: sorted(v) for k, v in REGIMES_CFG.items()},
+                "atr_override": dict(ATR_OVERRIDE),
+                "dd_protection": dict(DD_CONFIG),
+            },
+            "group_modes": {
+                g: gc._groups.get(g, {}).get("strategy_mode", "trend_following")
+                for g in active_groups
+            },
+        }
+        # 候选只改组级参数时 group_modes 不变, 会把候选与基线哈希成同一版本.
+        # 无覆盖时省略该键, 以保持基线版本号与既有谱系记录一致.
+        if override_groups:
+            portfolio_version_params["group_config_overrides"] = {
+                g: copy.deepcopy(override_groups[g])
+                for g in active_groups if g in override_groups
+            }
+        portfolio_version = compute_strategy_version(portfolio_version_params)
+        outcome_run_id = make_backtest_source_ref()["run_id"]
+
+        # 记忆层写入 (record_memory=False 时跳过: 候选参数结果不属于生产轨迹)
+        if record_memory:
+            try:
+                from src.memory.run_outcome import RunOutcomeStore
+                from src.memory.version_lineage import VersionLineage
+                from src.ai.suggestion_validator import SuggestionValidator
+
+                outcome_store = RunOutcomeStore()
+                outcome_store.record(
+                    run_id=outcome_run_id,
+                    window=outcome_window,
+                    metrics=outcome_metrics,
+                    mode=req.mode,
+                    groups=active_groups,
+                    strategy_version=portfolio_version,
+                )
+
+                lineage = VersionLineage()
+                lineage.record_version(
+                    version=portfolio_version,
+                    params=portfolio_version_params,
+                    run_id=outcome_run_id,
+                    window=outcome_window,
+                    mode=req.mode,
+                    groups=active_groups,
+                    metrics=outcome_metrics,
+                )
+
+                # 自动验证 (观察性: 同窗口 before/after 对比), 结论回写 L2 + 版本谱系
+                SuggestionValidator(
+                    outcome_store=outcome_store,
+                    version_lineage=lineage,
+                ).validate(dry_run=False)
+            except Exception:
+                logger.warning("P4 运行基线/自动验证/P7 谱系记录失败", exc_info=True)
+
         _progress(100, "完成")
 
         return {
             "status": "done",
+            "run_id": outcome_run_id,
+            "strategy_version": portfolio_version,
             "metrics": {
                 "total_return": round(metrics.total_return, 6),
                 "annual_return": round(metrics.annual_return, 6),
@@ -473,6 +776,7 @@ def run_portfolio_backtest(
             "benchmark_values": {"dates": bench_dates, "values": bench_values},
             "mode": req.mode,
             "groups": active_groups,
+            "group_metrics": group_metrics_map,
             "display_groups": req.groups,
             "portfolio_config": {
                 "weights": {g: w for g, w in PORTFOLIO_WEIGHTS.items() if w > 0},
@@ -485,3 +789,10 @@ def run_portfolio_backtest(
         return {"status": "error", "message": str(e)}
     finally:
         set_mode(prev_mode)  # 恢复原运行时模式
+        # P8: 恢复被 config_override 替换的组配置 (单例是全局的, 不能留候选参数)
+        if _gc_backup and gc is not None:
+            for g_name, g_cfg in _gc_backup.items():
+                if g_cfg is None:
+                    gc._groups.pop(g_name, None)
+                else:
+                    gc._groups[g_name] = g_cfg
