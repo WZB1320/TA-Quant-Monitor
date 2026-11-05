@@ -165,21 +165,24 @@ def build_candidate(groups_cfg: dict,
                     "lesson_id": lesson_id, "action": action,
                     "reason": f"承接组 {comp} 权重将变为负值 ({comp_new:.4f}), 无法 rebalance"})
                 continue
+            # 缺口 1 修复: 在修改 working_weights 之前先存快照,
+            # 否则 base 是 working_weights 的引用, before 会读到修改后的值
+            before_tgt = base[tgt]
+            before_comp = base[comp]
             candidate["weights"][tgt] = new_w
             candidate["weights"][comp] = round(comp_new, 4)
-            # 缺口 1 修复: 把本次改动写回 working_weights, 后续教训基于累计值计算
             working_weights[tgt] = new_w
             working_weights[comp] = comp_new
             candidate["lesson_ids"].append(lesson_id)
             candidate["changes"].append({
                 "lesson_id": lesson_id, "group": tgt, "target": "weight",
                 "via": "portfolio_weights",
-                "before": base[tgt], "after": round(new_w, 4),
+                "before": before_tgt, "after": round(new_w, 4),
             })
             candidate["changes"].append({
                 "lesson_id": lesson_id, "group": comp, "target": "weight",
                 "via": "portfolio_weights",
-                "before": base[comp], "after": round(comp_new, 4),
+                "before": before_comp, "after": round(comp_new, 4),
             })
             continue
 
